@@ -1,0 +1,316 @@
+﻿DataScythe v0.1.0 - Canonical Test Vector Specification
+=============================================================
+
+Release Boundary
+----------------
+
+This document is the conformance suite for DataScythe v0.1.0 core logic in
+src/core/ and src/platform/nvme_admin.h. Vectors cover pass scheduling,
+pattern generation, partition metadata geometry, NVMe sanitize progress parsing,
+certificate serialization, and filename sanitization.
+
+Integration tests for destructive raw-device I/O are intentionally absent from
+v0.1.0. Passing these vectors is necessary but not sufficient for hardware
+erase certification.
+
+
+Scope
+-----
+
+An implementation is specification-equivalent to v0.1.0 core logic when it
+produces the exact values in this document for the stated inputs. Matching only
+high-level behavior while differing in schedule integers, pattern bytes, or
+certificate line text is not compliant.
+
+Randomized schedule placement and random pattern bytes are stable only when the
+PassScheduler and PatternGenerator seeds are fixed as stated below.
+
+
+Global Encoding Rules
+---------------------
+
+Hexadecimal strings are lowercase without "0x" unless documenting ASCII paths.
+Decimal integers use ASCII digits without thousands separators.
+
+Certificate and log comparisons use exact LF-terminated line bytes as specified
+in FileFormat.txt.
+
+
+TV-PASS-01 Schedule Size
+------------------------
+
+Input:
+
+  PassScheduler scheduler (default seed)
+  pass_count = 3
+  include_random_passes = true
+
+Expected:
+
+  schedule.size() == 3
+
+
+TV-PASS-02 No Random Passes
+---------------------------
+
+Input:
+
+  PassScheduler scheduler (default seed)
+  pass_count = 5
+  include_random_passes = false
+
+Expected:
+
+  schedule.size() == 5
+  For every entry e: e >= 0
+
+
+TV-PATTERN-01 Zero Pattern
+--------------------------
+
+Input:
+
+  PatternGenerator generator(42)
+  fill_buffer(0x000, buffer, 512)
+
+Expected:
+
+  buffer.size() == 512
+  For every byte b: b == 0x00
+
+
+TV-PATTERN-02 Random Distinction
+--------------------------------
+
+Input:
+
+  PatternGenerator generator(99)
+  fill_buffer(-1, a, 256)
+  fill_buffer(-1, b, 256)
+
+Expected:
+
+  a.size() == 256
+  b.size() == 256
+  Exists index i where a[i] != b[i]
+
+
+TV-NVME-01 Sanitize Progress Complete
+-------------------------------------
+
+Input:
+
+  sanitize_progress_percent(0xFFFF)
+
+Expected:
+
+  100
+
+
+TV-NVME-02 Sanitize Progress Zero
+---------------------------------
+
+Input:
+
+  sanitize_progress_percent(0)
+
+Expected:
+
+  0
+
+
+TV-NVME-03 Poll Complete State
+------------------------------
+
+Input:
+
+  poll_once sets log.progress = 0xFFFF, log.status = 0x02, returns true
+  wait_for_sanitize_completion with 1 second timeout
+
+Expected:
+
+  state == SanitizePollState::Complete
+  progress callback invoked at least once
+
+
+TV-CERT-01 Mode Name Mapping
+----------------------------
+
+Input:
+
+  mode_to_string(FullDeviceWipe)
+  mode_to_string(SsdSecureErase)
+
+Expected:
+
+  "Full-device wipe"
+  "SSD hardware secure erase"
+
+
+TV-CERT-02 Build Certificate Fields
+-----------------------------------
+
+Input:
+
+  target = "\\\\.\\PhysicalDrive2"
+  EraseConfig:
+      mode = QuickZeroFill
+      pass_count = 1
+      verify_after_erase = true
+  EraseResult:
+      success = true
+      verification_passed = true
+      message = "Quick zero-fill completed"
+  log_entries = {"2026-01-01 12:00:00 INFO start"}
+
+Expected:
+
+  cert.target == "\\\\.\\PhysicalDrive2"
+  cert.mode_name == "Quick zero-fill"
+  cert.verification_enabled == true
+  cert.verification_passed == true
+  cert.success == true
+
+
+TV-CERT-03 Export Header
+------------------------
+
+Input:
+
+  ErasureCertificate with target "test-target", mode "Quick zero-fill",
+  pass_count 1, success true, result_message "done"
+  export_certificate to "datascythe_test_cert.txt"
+
+Expected file contains substrings:
+
+  "DATASCYTHE ERASURE CERTIFICATE"
+  "test-target"
+  "Quick zero-fill"
+
+After test: remove datascythe_test_cert.txt
+
+
+TV-PART-01 Small Device Regions
+-------------------------------
+
+Input:
+
+  partition_metadata_regions(512)
+
+Expected:
+
+  front_size == 512
+  back_size == 0
+  back_offset == 0
+
+
+TV-PART-02 Large Device Regions
+-------------------------------
+
+Input:
+
+  device_size = 10485760 (10 MiB)
+  partition_metadata_regions(device_size)
+
+Expected:
+
+  front_size == 1048576
+  back_size == 1048576
+  back_offset == 10485760 - 1048576 == 9437184
+
+
+TV-FILE-01 Sanitize Target Filename
+---------------------------------
+
+Input:
+
+  sanitize_target_for_filename(R"(\\.\PhysicalDrive1)")
+
+Expected:
+
+  "__._PhysicalDrive1"
+
+
+TV-FILE-02 Default Certificate Path
+-----------------------------------
+
+Input:
+
+  default_certificate_path(R"(\\.\PhysicalDrive2)")
+
+Expected substrings present:
+
+  "datascythe-certificate-"
+  "PhysicalDrive2"
+  ".txt"
+
+
+TV-VERIFY-01 Final Zero Pattern
+-------------------------------
+
+Input:
+
+  EraseConfig:
+      pass_count = 3
+      use_random_passes = false
+      final_zero_pass = true
+  schedule = PassScheduler::build_schedule(3, false)
+
+Expected:
+
+  schedule.size() == 3
+  When final_zero_pass true, final verification pattern is 0x000
+
+
+TV-VERIFY-02 Without Final Zero
+-------------------------------
+
+Input:
+
+  EraseConfig:
+      pass_count = 3
+      use_random_passes = false
+      final_zero_pass = false
+  schedule = PassScheduler::build_schedule(3, false)
+  last = schedule.back()
+
+Expected:
+
+  schedule_no_zero.back() == last when final_zero_pass toggled false
+
+
+Running the Suite
+-----------------
+
+Build tests target:
+
+  cmake --build build
+  ctest --test-dir build --output-on-failure
+
+Or execute directly:
+
+  build/tests/datascythe_tests.exe
+
+Expected stdout ends with:
+
+  All tests passed.
+
+
+Negative Cases (Manual)
+-----------------------
+
+The following are not automated in v0.1.0 but must be rejected at runtime:
+
+  - Erasing detected system drive (CLI exit 1, GUI critical dialog)
+  - ssd-secure with multiple CLI targets (exit 1)
+  - folder mode with multiple CLI targets (exit 1)
+  - CLI confirmation "yes" lowercase (aborted, exit 1)
+  - GUI phrase "erase 1" lowercase for drive index 1 (accept button disabled)
+
+
+Related Documentation
+---------------------
+
+  PassScheduling.txt    Schedule algorithm under test
+  EraseEngine.txt       Engine behavior referencing vectors
+  FileFormat.txt        Certificate serialization format
