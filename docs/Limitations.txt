@@ -1,0 +1,212 @@
+﻿DataScythe v0.1.0 - Data Boundary and Limitation Specification
+================================================================
+
+Release Boundary
+----------------
+
+This document specifies non-recoverable and partially-recoverable data
+boundaries for DataScythe v0.1.0. It applies to software overwrite, partition
+metadata wipe, file shredding, and hardware secure erase paths.
+
+Use the verified release hash published in docs/SHA256SUMS before relying on
+this document with a particular binary build.
+
+
+Scope
+-----
+
+This document defines:
+
+  - What regions an erase operation attempts to destroy
+  - What regions may retain data after a successful operation
+  - Verification limits
+  - Recovery expectations (data is not recoverable through DataScythe after erase)
+  - Environmental factors outside the tool
+
+EraseEngine.txt defines implementation behavior. OpSec.txt defines operator
+controls. This document defines the resulting data boundary.
+
+
+Destruction Model
+-----------------
+
+DataScythe destroys data by overwriting or instructing storage firmware to
+sanitize exposed addressable blocks. It does not provide a recovery workflow.
+After a successful erase, the tool cannot restore prior contents.
+
+Recovery in this document means third-party forensic recovery, not operator
+undo. The correct post-erase assumption is permanent loss of addressed content.
+
+
+In-Scope Destruction (Best Effort)
+----------------------------------
+
+Software overwrite modes destroy OS-readable bytes on the selected target:
+
+  FullDeviceWipe:
+      All bytes returned by size_bytes on the raw device handle
+      Plus first 1 MiB and last 1 MiB when partition metadata wipe is enabled
+
+  QuickZeroFill:
+      Same byte range as full wipe with a single zero pass
+
+  ShredVolume:
+      All bytes of the opened volume path (mounted filesystem view)
+
+  ShredFiles / ShredDirectory:
+      File payloads sized by effective_size (block-rounded when enabled)
+      NTFS alternate data streams when shred_alternate_data_streams is true
+
+  SsdSecureErase:
+      Firmware-defined sanitize scope for NVMe or ATA secure erase commands
+
+Partition metadata wipe overwrites:
+
+  Offset 0 .. min(device_size, 1 MiB) - 1
+  Offset (device_size - 1 MiB) .. device_size - 1 when device_size > 2 MiB
+
+These regions include MBR and GPT primary/backup structures for typical layouts.
+Filesystem metadata inside live volumes may remain until the volume itself is
+overwritten or the full device is wiped.
+
+
+Out-of-Scope Retention
+----------------------
+
+The following may retain user data even after a reported successful erase:
+
+  SSD wear-leveling pools and remapped sectors not visible to host reads
+  Disk firmware reserved areas (HPA, DCO, vendor diagnostics regions)
+  OPAL / self-encrypting drive internal key slots when crypto erase is not used
+  RAID controller caches and parity layouts abstracting member disks
+  USB bridge firmware translation layers
+  Network-attached storage targets not opened as local block devices
+  Hypervisor virtual disks while snapshots or differencing disks exist
+  Operating system swap, hibernation, and crash dump files on other volumes
+  Cloud sync, backup, email, and messaging copies on remote systems
+  Printer spool, thumbnail, and search index databases referencing file content
+  RAM, GPU memory, and CPU caches on a running system during file shred
+  Bad blocks reallocated by the drive before erase and never host-visible
+
+DataScythe emits warnings documenting several of these limits in every software
+erase result and inside exported certificates.
+
+
+Verification Boundary
+---------------------
+
+verify_after_erase performs sparse sampling, not full-media read compare.
+
+Sample geometry:
+
+  Up to three 512-byte reads per target
+  Offsets: 0, floor(size/2), size-512 (clamped)
+
+Passing verification means sampled bytes matched expectation. Failing
+verification means at least one sampled byte differed or read failed.
+
+Verification does not prove:
+
+  - Entire media is uniformly overwritten
+  - Firmware-hidden areas were cleared
+  - Crypto erase rendered media indistinguishable from zeros
+
+Random final passes skip byte comparison by design.
+
+SSD secure erase verification expects zero bytes at sample offsets. NVMe
+CryptoErase may leave non-zero host-readable patterns while still sanitizing
+media encryption keys. A verification failure after crypto erase does not
+always mean the sanitize command failed.
+
+
+Cancellation Boundary
+---------------------
+
+Operator cancellation stops further writes but does not roll back completed
+passes. A partially shredded file or partially wiped drive may contain:
+
+  - Earlier pass patterns in some ranges
+  - Unmodified ranges if cancellation occurred before any write
+  - Inconsistent partition tables if metadata wipe completed but data passes did not
+
+Treat cancelled targets as compromised for confidentiality purposes.
+
+
+Hardware Secure Erase Limitations
+---------------------------------
+
+ATA SECURITY ERASE:
+
+  May require power cycle before completion
+  Fails on frozen or password-locked drives
+  Behavior varies by vendor firmware
+
+NVMe Sanitize:
+
+  BlockErase and CryptoErase support depends on controller firmware
+  Polling timeout defaults to 60 minutes
+  Progress percent derives from Sanitize Status log SPROG field
+
+RAID-presented volumes may not forward sanitize commands to physical NAND.
+
+
+File Shred Limitations
+----------------------
+
+remove_after_shred deletes directory entries after overwrite. Recovery risks:
+
+  - Filesystem journal may retain block pointers transiently
+  - SSD TRIM may be deferred; previous LBA mappings may exist in FTL
+  - Shadow copies and restore points on Windows volumes
+  - Undiscovered hard links referencing the same inode
+
+round_file_size_to_block may overwrite slack space in the final filesystem
+block without overwriting prior truncated content beyond the rounded size if the
+filesystem retained stale block data outside the logical EOF.
+
+
+Operator Identification Errors
+------------------------------
+
+Selecting the wrong physical drive index while typing the correct ERASE phrase
+still destroys the wrong device. The phrase confirms acknowledgment, not serial
+number matching.
+
+Drive size 0 in the GUI table often indicates missing Administrator privileges,
+not a zero-capacity device.
+
+
+Recovery Procedures
+-------------------
+
+DataScythe provides no undelete, snapshot restore, or mnemonic-style recovery.
+
+If erase was unintended:
+
+  1. Stop further writes immediately.
+  2. Do not boot the affected system from the wiped disk.
+  3. Contact professional data recovery only if policy allows; success is unlikely
+     after full overwrite or successful sanitize.
+  4. Restore from offline backups not attached during erase.
+
+If erase was interrupted:
+
+  Assume partial exposure and unrecoverable inconsistency. Re-run erase on the
+  same target only after confirming correct device identity.
+
+
+Certificate Limitations
+-----------------------
+
+Erasure certificates record what the tool reported at completion time. They are
+not cryptographically signed. They do not attest to firmware-hidden retention or
+off-device copies.
+
+
+Related Documentation
+---------------------
+
+  EraseEngine.txt       Implementation of warnings and verification
+  OpSec.txt             Environmental threat model
+  FileFormat.txt        Certificate limitation block text
+  UserGuide.txt         Operator procedures before destructive runs
