@@ -1,0 +1,295 @@
+﻿DataScythe v0.1.0 - Byte-Level File Format Specification
+==============================================================
+
+Release Boundary
+----------------
+
+This is the normative file-format specification for the promoted production
+DataScythe v0.1.0 native build. Production surfaces write and read the formats
+below through apps/cli/datascythe, apps/gui/DataScythe, and src/core helpers.
+
+Erasure certificates and session log exports are UTF-8 text with LF line
+endings. No byte-order mark is written. Importers should tolerate CRLF in
+user-edited text, but v0.1.0 producers write LF (byte 0x0a).
+
+The live GUI log view is presentation-only. Log text rendered in the QTextEdit
+widget is not a separate on-disk format until the operator exports it.
+
+
+Scope
+-----
+
+This document specifies every structured file format produced or consumed by
+DataScythe v0.1.0 for operator-visible artifacts:
+
+  - Erasure certificate text files
+  - Exported session log text files
+  - CLI stderr progress lines (ephemeral, not saved by default)
+
+EraseEngine.txt specifies overwrite buffer construction and verification sample
+reads. PassScheduling.txt specifies pass label strings appearing in logs and
+progress output. Confirmation.txt specifies confirmation phrases that never
+appear inside exported certificate bodies.
+
+
+Format Inventory
+----------------
+
+v0.1.0 writes these file types:
+
+  datascythe-certificate-<target>-<timestamp>.txt
+      Human-readable erasure certificate (auto-save or --certificate export)
+
+  datascythe-log.txt (operator-chosen name)
+      Exported session log via GUI Export log
+
+  datascythe_test_cert.txt
+      Ephemeral filename used by unit tests only; not part of release artifacts
+
+v0.1.0 reads these inputs:
+
+  - Physical device paths (\\.\PhysicalDriveN, /dev/sdX, etc.)
+  - Volume mount points (C:\, /mnt/data, etc.)
+  - Regular file and directory paths for shred modes
+  - No structured import format for certificates or logs (export-only)
+
+
+Common Encodings
+----------------
+
+UTF-8:
+
+  All certificate and log text fields are UTF-8 strings. Target paths may
+  contain platform-specific separators. Sanitized filename components replace
+  illegal path characters with ASCII underscore 0x5f.
+
+Timestamps:
+
+  Log lines and certificate Started field use local wall-clock time formatted as:
+
+    YYYY-MM-DD HH:MM:SS
+
+  Example:
+
+    2026-07-05 14:22:13
+
+  Certificate Completed field appends the literal suffix " UTC" after the same
+  local-time format produced by timestamp_now() in certificate.cpp. Operators
+  should treat this as the implementation's fixed label, not a guaranteed UTC
+  conversion.
+
+Certificate auto-save filename timestamp uses strftime format:
+
+    %Y%m%d-%H%M%S
+
+  Example: 20260705-142213
+
+Hex in documentation:
+
+  Lowercase hex, two characters per byte, no separators and no "0x" prefix,
+  unless a field explicitly stores a path string containing hex digits.
+
+Newlines:
+
+  Certificate and log producers terminate each line with LF, byte 0x0a.
+  The certificate banner lines use 60 equals signs between LF boundaries.
+
+
+Erasure Certificate
+-------------------
+
+Producer functions:
+
+  build_certificate()   constructs ErasureCertificate in memory
+  export_certificate() serializes to disk
+
+Default auto-save directory:
+
+  Windows:  %USERPROFILE%\Documents\DataScythe\Certificates\
+  Other:    $HOME/Documents/DataScythe/Certificates/
+
+Default filename:
+
+  datascythe-certificate-<sanitized-target>-<YYYYMMDD-HHMMSS>.txt
+
+Sanitization (sanitize_target_for_filename):
+
+  Replace each of \ / : * ? " < > | with _
+  Empty result becomes "target"
+
+Exact on-disk layout:
+
+  Line 1:  60 '=' characters
+  Line 2:  14 spaces + "DATASCYTHE ERASURE CERTIFICATE"
+  Line 3:  60 '=' characters
+  Line 4:  empty
+  Line 5:  "Target:              " + target + LF
+  Line 6:  "Mode:                " + mode_name + LF
+  Line 7:  "Passes:              " + decimal pass_count + LF
+  Line 8:  "Random passes:       " + ("yes" | "no") + LF
+  Line 9:  "Final zero pass:     " + ("yes" | "no") + LF
+  Line 10: "Partition metadata:  " + ("wiped" | "skipped") + LF
+  Line 11: "Verification:        " + ("enabled" | "disabled") + LF
+
+When verification_enabled is true, append:
+
+  "Verification result: " + ("PASSED" | "FAILED") + LF
+
+Always append:
+
+  "Started:             " + started_at + LF
+  "Completed:           " + completed_at + LF
+  "Status:              " + ("SUCCESS" | "FAILURE") + LF
+  "Result:              " + result_message + LF
+
+When warnings is non-empty:
+
+  empty line
+  "Warnings:" + LF
+  for each warning w:
+      "  - " + w + LF
+
+Always append limitations block:
+
+  empty line
+  "Limitations:" + LF
+  "  - Covers OS-addressable regions only." + LF
+  "  - SSD wear-leveling, HPA/DCO, and firmware areas may retain data." + LF
+  "  - Backups and remote copies are outside scope." + LF
+
+When log_excerpt is non-empty:
+
+  empty line
+  "Log excerpt:" + LF
+  for each log line L:
+      L + LF
+
+Final banner:
+
+  empty line
+  60 '=' characters + LF
+
+Field sources:
+
+  target                  Operator-supplied path or summary string
+  mode_name               mode_to_string(EraseMode)
+  pass_count              EraseConfig.pass_count
+  random_passes           EraseConfig.use_random_passes
+  final_zero_pass         EraseConfig.final_zero_pass
+  partition_metadata_wipe EraseConfig.wipe_partition_metadata
+  verification_enabled    EraseConfig.verify_after_erase
+  verification_passed     EraseResult.verification_passed
+  started_at              First 19 characters of first log excerpt line, or
+                          completed_at when log is empty
+  completed_at            timestamp_now() with " UTC" suffix
+  success                 EraseResult.success
+  result_message          EraseResult.message
+  warnings                EraseResult.warnings (copied verbatim)
+  log_excerpt             Up to last 50 Logger entries at export time
+
+Certificates are not signed or encrypted. Integrity depends on controlled
+storage after export.
+
+
+Session Log Export
+------------------
+
+Producer:
+
+  Logger::export_to_file()
+
+Each entry is one line:
+
+  "[" + timestamp + "] [" + level + "] " + message
+
+Where:
+
+  timestamp = strftime("%Y-%m-%d %H:%M:%S") local wall time
+  level     = INFO | WARN | ERROR
+  message   = UTF-8 text without embedded LF characters
+
+Session lifecycle lines:
+
+  INFO Session started for <device_id> mode=<summary>
+  INFO Session ended status=success|failure duration_s=<seconds>
+
+The GUI append_log_line helper duplicates visible log lines into Logger at INFO
+level, so the exported file may contain both engine messages and UI annotations.
+
+
+CLI Progress Line Format
+------------------------
+
+The CLI progress callback writes to stderr without a trailing newline until the
+operation completes. Format:
+
+  \rPass %zu/%zu (%s) %.1f%% overall %.1f%% ETA %llds
+
+Fields map to EraseProgress:
+
+  current_pass      1-based pass index
+  total_passes      Total scheduled passes including final zero pass
+  pass_label        Pattern label or "verify" or "0x00 (final)"
+  percent_complete  Bytes written in current pass / pass size * 100
+  overall_percent   Overall bytes done / overall bytes total * 100
+  eta_seconds       Estimated seconds remaining, or -1 when unknown
+
+SSD secure erase progress uses:
+
+  \r%s %d%%
+
+Where the status string is "NVMe sanitize in progress", "NVMe sanitize complete",
+or similar platform text.
+
+
+Drive List CLI Format
+---------------------
+
+--list-drives prints human-readable UTF-8 to stdout. Each drive record is
+separated by a blank line. This output is not machine-parseable JSON. Field
+order is fixed as implemented in apps/cli/main.cpp.
+
+
+In-Memory Structures
+--------------------
+
+ErasureCertificate (src/core/certificate.h):
+
+  std::string target
+  std::string mode_name
+  std::size_t pass_count
+  bool random_passes
+  bool final_zero_pass
+  bool verification_enabled
+  bool verification_passed
+  bool partition_metadata_wipe
+  std::string started_at
+  std::string completed_at
+  bool success
+  std::string result_message
+  std::vector<std::string> warnings
+  std::vector<std::string> log_excerpt
+
+EraseProgress (src/core/erase_result.h) is not serialized to disk by v0.1.0
+except through ephemeral CLI stderr rendering.
+
+
+Compatibility Rules
+-------------------
+
+Future versions must preserve certificate banner text "DATASCYTHE ERASURE
+CERTIFICATE" if they claim to emit v0.1.0-compatible certificates. Additional
+fields should be appended before the closing banner rather than reordering
+existing lines, so legacy readers remain usable.
+
+Log level strings are case-sensitive. Changing WARN to WARNING would break log
+parsers that key on the bracketed token.
+
+
+Related Documentation
+---------------------
+
+  EraseEngine.txt        Engine behavior reflected in log excerpts
+  PassScheduling.txt     Pass labels in progress and log output
+  UserGuide.txt          Operator procedures for export actions
+  TestVectors.txt        Certificate and filename conformance vectors
