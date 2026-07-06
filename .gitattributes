@@ -1,0 +1,46 @@
+* text=auto eol=lf
+
+*.html text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+*.py text eol=lf
+*.sh text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.cmake text eol=lf
+*.cpp text eol=lf
+*.h text eol=lf
+*.hpp text eol=lf
+*.css text eol=lf
+*.svg text eol=lf
+
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.rc text eol=crlf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.pdf binary
+*.dmg binary
+*.app binary
+*.AppImage binary
+*.deb binary
+*.rpm binary
+*.msi binary
+*.exe binary
+*.dll binary
+*.lib binary
+*.pdb binary
+*.zip binary
+*.tar binary
+*.gz binary
+
+vendor/** -text
+docs/reference/** -text
