@@ -1,0 +1,218 @@
+﻿DataScythe v0.1.0 - Pass Scheduling and Pattern Encoding
+============================================================
+
+Release Boundary
+----------------
+
+This is the normative pass-scheduling specification for DataScythe v0.1.0.
+The authoritative implementation is:
+
+  src/core/pass_scheduler.cpp   Schedule construction
+  src/core/pattern_generator.cpp Pattern buffer fill and labels
+
+The kShredPatterns table is derived from GNU coreutils shred.c patterns[] as
+preserved in docs/reference/shred.c. DataScythe does not invoke GNU shred at
+runtime.
+
+
+Scope
+-----
+
+This document defines:
+
+  - Fixed pattern integer encoding
+  - kShredPatterns group traversal
+  - Random pass slot insertion
+  - PatternGenerator buffer expansion algorithm
+  - Pass label strings for progress and logs
+
+EraseEngine.txt defines how schedules are consumed during write_full_pass.
+
+
+Pattern Integer Encoding
+------------------------
+
+PassScheduler schedule entries are signed 32-bit integers:
+
+  pattern >= 0   Fixed overwrite pattern
+  pattern == -1  Random pass slot marker during schedule assembly
+  pattern < -1   Not emitted in final schedules; negative descriptors in
+                 kShredPatterns encode random pass counts only
+
+Fixed pattern low 12 bits (0x000..0xFFF) select the bit triplet replicated
+across the buffer. Bit 0x1000 enables per-sector first-byte XOR 0x80 in
+PatternGenerator::fill_fixed_pattern.
+
+
+PatternGenerator Fixed Fill
+---------------------------
+
+Given type >= 0 and size >= 3:
+
+  bits = (type & 0xfff)
+  bits |= bits << 12
+
+  data[0] = (bits >> 4) & 255
+  data[1] = (bits >> 8) & 255
+  data[2] = bits & 255
+
+Expansion:
+
+  i = 3
+  while i < size/2: memcpy(data+i, data, i); i *= 2
+  if i < size: memcpy(data+i, data, size-i)
+
+If type & 0x1000:
+
+  for each sector offset s = 0, 512, 1024, ... < size:
+      data[s] ^= 0x80
+
+Examples:
+
+  type 0x000 --> all bytes 0x00
+  type 0xFFF --> all bytes 0xFF
+  type 0x555 --> repeating 0x55 bytes
+
+
+PatternGenerator Random Fill
+----------------------------
+
+pattern_type < 0 triggers fill_random:
+
+  Each byte independently uniform in 0..255 via std::uniform_int_distribution
+  RNG engine: std::mt19937_64
+
+Default constructor seeds from std::random_device{} unless a seed is supplied.
+PassScheduler owns a separate mt19937_64 for schedule placement randomness.
+
+
+Pass Labels
+-----------
+
+pass_label(pattern_type, sample):
+
+  pattern < 0  --> "random"
+  sample >= 3 bytes --> lowercase hex of first three bytes without separators
+                        (ostream hex width 2, fill '0')
+  else --> "fixed"
+
+CLI and GUI display this label in progress output.
+
+
+kShredPatterns Table
+--------------------
+
+The constant int array in pass_scheduler.cpp:
+
+  -2,
+  2, 0x000, 0xFFF,
+  2, 0x555, 0xAAA,
+  -1,
+  6, 0x249, 0x492, 0x6DB, 0x924, 0xB6D, 0xDB6,
+  12, 0x111, 0x222, 0x333, 0x444, 0x666, 0x777,
+      0x888, 0x999, 0xBBB, 0xCCC, 0xDDD, 0xEEE,
+  -1,
+  8, 0x1000, 0x1249, 0x1492, 0x16DB, 0x1924, 0x1B6D, 0x1DB6, 0x1FFF,
+  14, 0x1111, 0x1222, 0x1333, 0x1444, 0x1555, 0x1666, 0x1777,
+      0x1888, 0x1999, 0x1AAA, 0x1BBB, 0x1CCC, 0x1DDD, 0x1EEE,
+  -1,
+  0,
+
+Interpretation while building a schedule of pass_count passes:
+
+  descriptor > 0:
+      Next descriptor values are a fixed-pattern group of length descriptor.
+      Consume entire group when remaining >= group_size.
+      When remaining < group_size:
+          if remaining < 2 OR 3*remaining < group_size:
+              assign remaining slots to random (if random enabled) or stop
+          else:
+              randomly subsample group entries without replacement bias
+              (random_choose index < remaining)
+
+  descriptor < 0:
+      count = -descriptor random pass slots needed
+      Skipped entirely when include_random_passes is false
+      Consumes min(count, remaining) from pass budget
+
+  descriptor == 0:
+      Reset cursor to start of kShredPatterns (loop)
+
+When include_random_passes is false and fixed patterns exhaust before
+pass_count is met, the implementation repeats the fixed vector cyclically.
+
+
+Random Slot Placement
+---------------------
+
+After fixed patterns are placed in schedule[0..fixed_count-1], random slots are
+interleaved:
+
+  random_slots = min(random_needed, total)
+  top = fixed_count
+  random_remaining = random_slots
+  slope = random_remaining - 1 (or 0 when random_remaining == 0)
+  accum starts at random_remaining - 1
+
+For n in 0..total-1:
+
+  if random_remaining > 0 and accum <= slope:
+      schedule[top++] = schedule[n]
+      schedule[n] = -1
+      decrement random_remaining
+      accum += total - 1
+  else if top > n + 1:
+      swap schedule[n] with schedule[n + random_choose(top - n)]
+  if random_remaining > 0:
+      accum -= slope
+
+Final schedule entries of -1 denote random passes at execution time.
+
+
+Default Operator Settings
+-------------------------
+
+EraseConfig defaults:
+
+  pass_count = 3
+  use_random_passes = true
+  final_zero_pass = true
+
+With pass_count = 3 and random passes enabled, the schedule typically includes
+entries from the opening 0x000/0xFFF group plus a random slot depending on RNG.
+Operators requiring deterministic media overwriting should pass --no-random on
+the CLI or uncheck Random passes in the GUI.
+
+final_zero_pass appends an additional 0x000 pass after the schedule. It does not
+alter schedule construction itself.
+
+
+Custom Patterns
+-----------------
+
+EraseConfig.custom_patterns inserts encoded fixed patterns at the beginning of
+the schedule before execution. Each FixedPattern supplies:
+
+  value (uint32, masked to 12 bits)
+  flip_first_bit_per_sector (bool --> OR 0x1000)
+
+Custom patterns run before shred-table patterns and count toward data_passes.
+
+
+Conformance Requirements
+------------------------
+
+An implementation is scheduling-equivalent to v0.1.0 when, for a fixed
+PassScheduler seed and include_random_passes flag, build_schedule returns the
+same integer vector for all pass_count values in TestVectors.txt.
+
+An implementation is pattern-equivalent when fill_buffer(0x000, 512) yields
+512 zero bytes and pass_label output matches for the TV pattern samples.
+
+
+Related Documentation
+---------------------
+
+  EraseEngine.txt      Write pass consumption of schedules
+  TestVectors.txt      Fixed-seed schedule and pattern vectors
+  docs/reference/shred.c  GNU shred reference table
