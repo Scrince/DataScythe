@@ -1,0 +1,14 @@
+{
+  "name": "datascythe",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "cmake --build build",
+    "test": "ctest --test-dir build --output-on-failure",
+    "test:release": "python tests/release-harness/run-release-harness.py",
+    "release:stage": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare_release_assets.ps1",
+    "release:hashes": "python scripts/generate_sha256sums.py",
+    "release:sign": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign_release_assets.ps1",
+    "release:codesign-cert": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate_code_signing_cert.ps1"
+  }
+}
