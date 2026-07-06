@@ -1,0 +1,117 @@
+﻿DataScythe v0.1.0 - Code Signing Certificate Specification
+============================================================
+
+Release Boundary
+----------------
+
+This document specifies the local Authenticode code-signing certificate used by
+DataScythe maintainers for optional Windows binary signing. It is separate from
+PGP release signatures documented in UserGuide.txt and Release_v0.1.0.txt.
+
+Version 0.1.0 promoted release integrity relies on SHA256SUMS and PGP detached
+signatures. Windows SmartScreen publisher trust is not established by the
+checked-in self-signed Authenticode certificate unless operators install it as a
+trusted root.
+
+
+Scope
+-----
+
+This document covers:
+
+  - Public certificate location and inspection
+  - Private key export locations (gitignored)
+  - Password file handling
+  - Signing and regeneration commands
+  - Relationship to PGP release signing
+
+PGP release signing keys live in .gnupg-release/ alongside Authenticode exports.
+The directory is hidden on Windows (attrib +H) and excluded from git.
+
+
+Public Certificate
+------------------
+
+Checked-in file:
+
+  docs/DataScythe_Local_Code_Signing_2026.cer
+
+Observed thumbprint (SHA-1):
+
+  5F177B17AB42FFD65969B3B0B2D5B739D0283742
+
+Inspect:
+
+  certutil -dump docs\DataScythe_Local_Code_Signing_2026.cer
+
+Import for local verification (CurrentUser\Root):
+
+  Import-Certificate -FilePath docs\DataScythe_Local_Code_Signing_2026.cer `
+    -CertStoreLocation Cert:\CurrentUser\Root
+
+This is a self-signed maintainer certificate. It is not a public CA-issued EV
+code-signing certificate.
+
+
+Private Key Material
+--------------------
+
+Gitignored exports:
+
+  .gnupg-release/private-keys-v1.d/DataScythe_Local_Code_Signing_2026.pfx
+  .gnupg-release/private-keys-v1.d/DataScythe_Local_Code_Signing_2026.p12
+
+Password file:
+
+  .gnupg-release/code-signing-password.txt
+
+The .gnupg-release directory must remain off public mirrors. Re-apply hidden
+attribute after checkout when needed:
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/hide_gnupg_release.ps1
+
+
+Sign a Binary (Maintainers)
+---------------------------
+
+PowerShell example:
+
+  $pwd = Get-Content .gnupg-release\code-signing-password.txt | Select-Object -Last 1
+  $sec = ConvertTo-SecureString -String $pwd -Force -AsPlainText
+  $cert = (Get-PfxData -FilePath .gnupg-release\private-keys-v1.d\DataScythe_Local_Code_Signing_2026.pfx -Password $sec).EndEntityCertificates[0]
+  Set-AuthenticodeSignature -FilePath .\releases\native\windows\DataScythe-0.1.0-win64\DataScythe.exe -Certificate $cert
+
+Signing alters PE byte content. Recompute SHA256SUMS and re-sign PGP manifests
+after Authenticode signing if signed binaries are distributed.
+
+
+Regenerate Certificate
+----------------------
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/generate_code_signing_cert.ps1
+
+Regeneration invalidates prior thumbprints. Update Release notes and operator
+documentation when the public .cer is rotated.
+
+
+PGP vs Authenticode
+-------------------
+
+  PGP (docs/DataScythe_Release_Signing_2026_pubkey.asc):
+      Release integrity for zip, exe, and SHA256SUMS manifest
+      Fingerprint: 72E7 D550 77BA 8D7D 425B DC76 6133 2D0E 78FE F1CF
+
+  Authenticode (docs/DataScythe_Local_Code_Signing_2026.cer):
+      Optional Windows publisher metadata on PE files
+      Local self-signed; not a substitute for PGP verification
+
+Operators should verify PGP signatures before trusting any release artifact
+regardless of Authenticode status.
+
+
+Related Documentation
+---------------------
+
+  BuildReproducability.txt  Staging and hash regeneration after signing
+  OpSec.txt                   Release integrity checklist
+  Release_v0.1.0.txt          v0.1.0 thumbprint record
