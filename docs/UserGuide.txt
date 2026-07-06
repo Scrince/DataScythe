@@ -1,0 +1,525 @@
+﻿DataScythe v0.1.0 - Byte-Level User and Operator Guide
+============================================================
+
+Release Boundary
+----------------
+
+This guide describes the promoted production DataScythe v0.1.0 native build set.
+The production surfaces are:
+
+  apps/cli/datascythe          Command-line erasure tool
+  apps/gui/DataScythe          Qt 6 desktop GUI
+  DataScythe.py                Compatibility launcher for the CLI
+
+The checked-in Windows release archive is:
+
+  releases/native/windows/DataScythe-0.1.0-win64.zip
+
+The archive contains DataScythe.exe (GUI), datascythe-cli.exe (CLI), Qt 6.9.0
+MinGW runtime DLLs, platform plugins, and README.txt. The CLI binary inside the
+release zip is named datascythe-cli.exe to avoid a case collision with
+DataScythe.exe on case-insensitive Windows file systems.
+
+Linux and macOS native release artifacts are not yet promoted under
+releases/native/. Source builds for those platforms are supported. See
+LinuxRelease.txt for Linux-specific notes.
+
+Version 0.1.0 implements GNU shred-inspired pass scheduling, partition metadata
+wipe, NTFS alternate data stream shredding, post-erase verification, erasure
+certificates, pre-flight checks, typed GUI confirmation, and SSD hardware secure
+erase (NVMe Sanitize and ATA SECURITY ERASE on Windows). See EraseEngine.txt,
+PassScheduling.txt, FileFormat.txt, and Confirmation.txt for byte-level
+internals.
+
+
+Source of Truth
+---------------
+
+This guide describes the native C++ implementation under src/ with platform
+backends in platform/ and application entry points in apps/.
+
+Authoritative implementation files:
+
+  src/core/erase_engine.cpp       Overwrite pipeline, verification, progress
+  src/core/pass_scheduler.cpp     GNU shred-style pass schedule builder
+  src/core/pattern_generator.cpp  Fixed and random overwrite buffers
+  src/core/partition_table.cpp    MBR/GPT metadata region wipe
+  src/core/certificate.cpp        Erasure certificate export
+  src/core/verification.cpp       Post-erase sample reads
+  apps/cli/main.cpp               CLI argument parsing and dispatch
+  apps/gui/main_window.cpp        Qt GUI workflow and confirmation gates
+  platform/windows/               Windows drive enumeration, raw I/O, secure erase
+
+The reference GNU coreutils shred implementation is preserved at
+docs/reference/shred.c. Pass scheduling and fixed-pattern encoding follow that
+reference. DataScythe does not ship GNU coreutils as a runtime dependency.
+
+kAppVersion in src/core/version.h is 0.1.0. The CLI --version flag and GUI
+window title report this value.
+
+
+Release Signature Verification
+------------------------------
+
+Version 0.1.0 Windows release artifacts include detached PGP signatures. The
+release-signing public key is:
+
+  docs/DataScythe_Release_Signing_2026_pubkey.asc
+
+Release signing key:
+
+  DataScythe Release Signing (2026) <release@datascythe.local>
+  Fingerprint: 72E7 D550 77BA 8D7D 425B DC76 6133 2D0E 78FE F1CF
+
+Before trusting a signature, inspect the public key and confirm that the
+fingerprint matches the value above:
+
+  gpg --show-keys docs/DataScythe_Release_Signing_2026_pubkey.asc
+
+To verify the signed checksum manifest:
+
+  gpg --import docs/DataScythe_Release_Signing_2026_pubkey.asc
+  gpg --verify docs/SHA256SUMS.asc docs/SHA256SUMS
+
+To verify the Windows release archive:
+
+  gpg --verify releases/native/windows/DataScythe-0.1.0-win64.zip.asc releases/native/windows/DataScythe-0.1.0-win64.zip
+
+PGP signatures confirm that the artifact matches the key holder's signature.
+They do not make Windows treat the binaries as Authenticode-signed. See
+CodeSigning.txt for the separate local Authenticode certificate used by
+maintainers.
+
+
+Supported Erase Scope
+---------------------
+
+DataScythe v0.1.0 performs destructive erasure on targets the operating system
+exposes to user-mode I/O. It does not scan remote backups, cloud sync folders,
+database transaction logs, swap files on other volumes, or firmware-reserved
+storage outside OS visibility.
+
+Supported operation modes:
+
+  FullDeviceWipe     Overwrite every OS-addressable byte on a physical device
+  QuickZeroFill      Single all-zero pass across a physical device
+  ShredVolume        Shred-style overwrite of a mounted volume path
+  ShredFiles         Overwrite one or more regular files
+  ShredDirectory     Overwrite all files in a directory tree
+  SsdSecureErase     Hardware-assisted erase (NVMe Sanitize / ATA SECURITY ERASE)
+
+Supported target classes:
+
+  Windows physical drives     \\.\PhysicalDriveN
+  Windows volume mount points C:\, D:\, etc.
+  Windows file and folder paths
+  Linux block devices           /dev/sdX, /dev/nvme0n1 (when built for Linux)
+  macOS raw devices             platform-specific paths (when built for macOS)
+
+The tool blocks erase of the detected system drive and system volumes. Drive
+enumeration without Administrator privileges may report size_bytes = 0 on
+Windows because IOCTL queries fail; always run drive-level operations elevated.
+
+
+Initial GUI State
+-----------------
+
+On launch, the main window displays:
+
+  Title:     DataScythe - Secure Drive Eraser
+  Header:    Administrator privileges are required for raw device access.
+  Drive table: empty until Refresh drives is clicked
+  Passes spin box: 3 (range 1..100)
+  Random passes: checked
+  Final zero pass: checked
+  Remove files after shred: checked
+  Recursive folders: checked
+  Verify after erase: unchecked
+  Wipe partition metadata: checked
+  Shred NTFS ADS: checked
+  Auto-save certificate: checked
+
+Action buttons:
+
+  Refresh drives
+  Full-device wipe
+  Quick zero-fill
+  Secure erase volume
+  SSD hardware secure erase
+  Secure erase file(s)
+  Secure erase folder
+  Cancel (enabled only during an active job)
+  Export certificate
+  Export log
+
+Progress bar and status label remain at 0% / Ready until an operation starts.
+
+
+Drive Enumeration
+-----------------
+
+Procedure (GUI):
+
+  1. Run DataScythe.exe as Administrator on Windows.
+  2. Click Refresh drives.
+  3. Review physical index, device path, model, serial, size, type, and volumes.
+  4. Confirm the system-drive flag is not set on the intended target.
+
+Procedure (CLI):
+
+  datascythe --list-drives
+
+CLI output format per drive:
+
+  Drive N: <device_path>
+    Model:  <model string>
+    Serial: <serial string>
+    Size:   <size_bytes> bytes
+    Type:   HDD | SSD | Removable | Virtual | Unknown
+    System: YES | no
+    Volumes: <space-separated mount points>
+
+The physical_index field in drive metadata is the N used in the GUI confirmation
+phrase ERASE N. It is not necessarily the same integer Windows Disk Management
+displays; always match on device_path and model serial before confirming.
+
+
+Erase Configuration Defaults
+----------------------------
+
+EraseConfig defaults in src/core/erase_config.h:
+
+  mode                         FullDeviceWipe
+  pass_count                   3
+  use_random_passes            true
+  final_zero_pass              true
+  round_file_size_to_block     true
+  remove_after_shred           true
+  recursive                    true
+  verify_after_erase           false
+  shred_alternate_data_streams true
+  wipe_partition_metadata      true
+
+The GUI maps these fields to the configuration group checkboxes and the passes
+spin box. The CLI maps them to --passes, --no-random, --no-zero, --remove,
+--no-remove, --recursive, --no-recursive, --verify, --no-partition-wipe, and
+--no-ads.
+
+
+Pre-Flight Checks
+-----------------
+
+Before any destructive operation, DataScythe runs platform pre-flight checks.
+On Windows, drive-level modes require Administrator elevation.
+
+Blocking errors include:
+
+  - Administrator privileges missing for raw device or volume erase
+  - System drive or system volume selected
+  - Target media reported read-only
+  - Target path does not exist (file/folder modes)
+
+Warnings include:
+
+  - Mounted volumes on a drive targeted for full-device wipe or SSD secure erase
+  - Non-SSD drive selected for SSD hardware secure erase
+
+The GUI shows blocking errors in a critical message box and stops. Warnings
+present a Yes/No continuation dialog. The CLI prints the formatted pre-flight
+report to stderr and exits with code 1 when pre-flight fails.
+
+
+Confirmation Gates
+------------------
+
+DataScythe never starts a destructive write without explicit operator
+confirmation unless --yes is passed on the CLI.
+
+GUI drive operations require:
+
+  1. Typed phrase ERASE <physical_index> in the confirmation dialog.
+  2. A final Yes/No dialog: "Last chance: permanently erase <device_path>?"
+
+GUI file operations require:
+
+  1. Typed phrase SHRED FILES.
+  2. Final Yes/No dialog for the selected path(s).
+
+GUI folder operations require:
+
+  1. Typed phrase SHRED FOLDER.
+  2. Final Yes/No dialog for the folder path.
+
+CLI operations require:
+
+  Interactive stdin line exactly equal to YES (case-sensitive) unless --yes.
+
+See Confirmation.txt for normative phrase definitions and acceptance rules.
+
+
+Full-Device Wipe
+----------------
+
+Overwrites every byte the OS exposes on the selected physical drive.
+
+Pipeline:
+
+  1. Pre-flight and confirmation.
+  2. Best-effort volume dismount.
+  3. Optional partition metadata wipe (first and last 1 MiB) when enabled.
+  4. Pass schedule execution (pass_count passes, optional random mixing,
+     optional final zero pass).
+  5. Optional verification sample reads.
+  6. Optional certificate export.
+
+GUI: select drive row, click Full-device wipe.
+
+CLI:
+
+  datascythe --mode full --yes \\.\PhysicalDrive2
+
+Use --passes N, --no-random, --no-zero, --verify, --no-partition-wipe, and
+--certificate <path> to adjust behavior.
+
+
+Quick Zero-Fill
+---------------
+
+Performs a single 0x00 overwrite across the device. Ignores pass_count and
+random pass settings except for partition metadata handling and verification.
+
+GUI: select drive, click Quick zero-fill.
+
+CLI:
+
+  datascythe --mode quick --yes \\.\PhysicalDrive2
+
+
+Secure Erase Volume
+-------------------
+
+Shred-style overwrite of the first mounted volume on the selected physical
+drive. The engine opens the volume mount point (for example D:\) rather than
+the raw \\.\PhysicalDriveN path.
+
+If the drive has no mounted volumes, the GUI shows "No volumes" and aborts.
+
+GUI: select drive, click Secure erase volume.
+
+CLI:
+
+  datascythe --mode volume --yes \\.\PhysicalDrive2
+
+The CLI resolves \\.\PhysicalDriveN to the first volume mount point when mode
+is volume.
+
+
+SSD Hardware Secure Erase
+-------------------------
+
+Issues firmware-level secure erase when supported:
+
+  NVMe: Sanitize with BlockErase, falling back to CryptoErase
+  ATA/SATA: SECURITY ERASE PREPARE (0xF3) then SECURITY ERASE UNIT (0xF4)
+
+Requires Administrator on Windows. The drive must not be frozen, password-
+locked, or under RAID management. ATA erase may require a power cycle before
+the operation completes.
+
+GUI: select drive, click SSD hardware secure erase.
+
+CLI:
+
+  datascythe --mode ssd-secure --yes \\.\PhysicalDrive1
+
+Verification after SSD secure erase reads sample sectors expecting all-zero
+bytes. Crypto erase or remapped blocks may cause verification failure even when
+the sanitize command succeeded. See Limitations.txt.
+
+
+Secure Erase Files
+------------------
+
+Overwrites selected files with the configured pass schedule. Optionally deletes
+files after shredding (--remove / GUI checkbox). On Windows, NTFS alternate data
+streams are shredded when shred_alternate_data_streams is enabled.
+
+GUI: Secure erase file(s) opens a multi-select file dialog.
+
+CLI:
+
+  datascythe --mode files --remove --verify --yes C:\temp\a.txt C:\temp\b.doc
+
+
+Secure Erase Folder
+-------------------
+
+Collects files under a directory (recursive by default) and shreds each file
+using the ShredFiles pipeline.
+
+GUI: Secure erase folder opens a directory picker.
+
+CLI:
+
+  datascythe --mode folder --recursive --yes C:\temp\shred_me
+
+
+Progress and Cancellation
+-------------------------
+
+During overwrite operations the CLI prints a carriage-return progress line to
+stderr:
+
+  Pass <current>/<total> (<label>) <pass_percent>% overall <overall>% ETA <seconds>s
+
+The GUI updates a progress bar and status label from the same EraseProgress
+structure. ETA is estimated from overall bytes written and elapsed wall time.
+
+Cancel behavior:
+
+  GUI: click Cancel during an active job.
+  Effect: cancel_requested is set; the engine stops between chunk writes.
+
+Cancellation is best-effort. A partially overwritten target may be unreadable
+or inconsistent. Do not assume a cancelled job left data intact.
+
+
+Verification
+------------
+
+When verify_after_erase is enabled, the engine reads up to three 512-byte
+samples per target at offsets 0, size/2, and size-512 (when large enough).
+
+Quick zero-fill and final zero pass verify all-zero bytes.
+
+Fixed-pattern final passes verify against the PatternGenerator buffer for the
+final pattern type.
+
+Random final passes skip byte comparison and emit a warning that verification
+was skipped. verification_passed is set true in that case.
+
+SSD hardware secure erase uses verify_target_zeroed, which expects zero bytes
+at sample offsets. This may not reflect crypto-erase semantics.
+
+See EraseEngine.txt and Limitations.txt.
+
+
+Erasure Certificates
+--------------------
+
+On successful completion, the GUI auto-saves a certificate when Auto-save
+certificate is checked. Default path:
+
+  Windows: %USERPROFILE%\Documents\DataScythe\Certificates\
+  Linux/macOS: $HOME/Documents/DataScythe/Certificates/
+
+Filename pattern:
+
+  datascythe-certificate-<sanitized-target>-<YYYYMMDD-HHMMSS>.txt
+
+The CLI exports a certificate only when --certificate <path> is supplied.
+
+Certificate field layout is specified in FileFormat.txt.
+
+Manual export: GUI Export certificate button after a completed job.
+
+
+Log Export
+----------
+
+The GUI log view mirrors Logger entries. Export log writes UTF-8 text with LF
+line endings:
+
+  [<YYYY-MM-DD HH:MM:SS>] [<LEVEL>] <message>
+
+Levels: INFO, WARN, ERROR.
+
+Log lines are not signed. Treat exported logs as operational records, not
+tamper-evident proof.
+
+
+CLI Reference
+-------------
+
+Usage:
+
+  datascythe --list-drives
+  datascythe [options] <target> [targets...]
+
+Options:
+
+  --mode MODE       full | quick | volume | files | folder | ssd-secure
+                    (default: full)
+  --passes N        Overwrite pass count (default: 3)
+  --no-random       Disable random shred passes
+  --no-zero         Skip final zero pass
+  --remove          Delete files after shredding
+  --no-remove       Keep files after shredding
+  --recursive       Recurse into subdirectories (folder mode)
+  --no-recursive    Do not recurse (folder mode)
+  --verify          Read back sample sectors after erase
+  --no-partition-wipe  Skip MBR/GPT metadata wipe on block devices
+  --no-ads          Skip NTFS alternate data streams (file/folder modes)
+  --certificate P   Export erasure certificate to path P on success
+  --yes             Skip interactive YES confirmation
+  --version         Show version information
+  --help            Show help
+
+Exit codes:
+
+  0   Success
+  1   Usage error, pre-flight failure, confirmation declined, or erase failure
+
+
+Platform Requirements
+---------------------
+
+Windows reference build:
+
+  CMake 3.16+
+  MinGW 13.1.0 (Qt Tools)
+  Qt 6.9.0 mingw_64
+  Administrator elevation for drive-level operations
+
+Linux build:
+
+  CMake 3.16+, GCC or Clang, Qt 6 when GUI enabled
+  root for raw block device access
+
+macOS build:
+
+  CMake 3.16+, Xcode toolchain, Qt 6 when GUI enabled
+  root for raw device access
+
+Build commands are recorded in BuildReproducability.txt.
+
+
+Operational Safety Rules
+------------------------
+
+  1. Verify docs/SHA256SUMS and PGP signatures before running a release build.
+  2. Match physical drive index, model, and serial before confirming.
+  3. Never erase the system drive.
+  4. Disconnect or accept dismount of mounted volumes on whole-device operations.
+  5. Store certificates and logs only on controlled media.
+  6. Assume SSD wear-leveling, HPA/DCO, and firmware regions may retain data.
+  7. Assume a compromised host can observe paths, filenames, and timing.
+
+See OpSec.txt and Limitations.txt for the full operational security model.
+
+
+Related Documentation
+---------------------
+
+  FileFormat.txt           Certificate, log, and CLI output formats
+  EraseEngine.txt          Overwrite engine internals
+  PassScheduling.txt       GNU shred-style schedule and pattern encoding
+  Confirmation.txt         Typed phrase and CLI YES rules
+  Limitations.txt          Data boundaries and non-recoverable regions
+  OpSec.txt                Operational security requirements
+  TestVectors.txt          Conformance vectors for core logic
+  BuildReproducability.txt Reference build and hash verification
+  LinuxRelease.txt         Linux release and installation notes
+  Release_v0.1.0.txt       v0.1.0 promotion record
+  CodeSigning.txt          Authenticode certificate handling
+  ThirdPartyNotices.txt    Qt, MinGW, shred.c license notices
