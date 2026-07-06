@@ -1,0 +1,77 @@
+# OS and editor noise
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Secret material and local signing keys (also hidden at OS level)
+.gnupg-release/
+.gnupg-release/**
+*.pfx
+*.p12
+*.key
+*.pem
+
+# CMake and C++ build outputs
+build/
+out/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+*.obj
+*.o
+*.a
+*.lib
+*.pdb
+*.ilk
+*.exp
+
+# Generated installers and release binaries
+releases/
+*.msi
+*.exe
+*.app
+*.dmg
+*.AppImage
+*.deb
+*.rpm
+!releases/
+!releases/native/
+!releases/native/windows/
+!releases/native/windows/*.exe
+!releases/native/windows/*.zip
+!releases/native/windows/*.asc
+!releases/native/windows/**/*.asc
+!docs/SHA256SUMS.asc
+!docs/DataScythe_Release_Signing_2026_pubkey.asc
+!releases/native/macos/
+!releases/native/macos/*.dmg
+!releases/native/macos/*.zip
+!releases/native/macos/*.asc
+!releases/native/linux/
+!releases/native/linux/datascythe
+!releases/native/linux/*.deb
+!releases/native/linux/*.rpm
+!releases/native/linux/*.zip
+!releases/native/linux/*.asc
+releases/**/._*
+
+# Local branding source assets. App icons live under apps/gui/resources.
+/assets/
+DataScythe_asset_pack/
+RepoTree.txt
+ReleaseTree.txt
+*.log
+
+# Temporary files
+tmp/
+*.tmp
+*.temp
+*.bak
+*.bak-*
