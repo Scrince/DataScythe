@@ -1,0 +1,64 @@
+Third Party Notices
+
+Notice 1
+Source project or author: GNU coreutils; Free Software Foundation, Inc.
+License type: GNU General Public License v3.0 or later
+Applied to: Reference source file docs/reference/shred.c
+Use: Pass-scheduling and overwrite pattern reference for PassScheduler and
+     PatternGenerator. DataScythe does not link against GNU coreutils at
+     runtime. The reference file is not modified in normal builds.
+Location: docs/reference/shred.c
+
+Notice 2
+Source project or author: The Qt Company Ltd. and Qt contributors
+License type: GNU Lesser General Public License v3.0; commercial license
+     available from The Qt Company
+Applied to: Qt 6 libraries and tools (Core, Gui, Widgets, deployment plugins)
+Use: DataScythe GUI application (apps/gui/DataScythe) when
+     DATASCYTHE_BUILD_GUI is enabled. Dynamic linking against Qt shared libraries
+     in Windows release builds.
+Reference: https://www.qt.io/licensing/
+
+Notice 3
+Source project or author: MinGW-w64 / GCC runtime components
+License type: Various; includes GCC Runtime Library Exception for libgcc/libstdc++
+Applied to: MinGW-compiled Windows binaries and redistributed runtime DLLs
+Use: Windows reference toolchain (C:\Qt\Tools\mingw1310_64) for building and
+     packaging release executables.
+Components may include: libgcc_s_seh-1.dll, libstdc++-6.dll, libwinpthread-1.dll
+
+Notice 4
+Source project or author: CMake; Kitware, Inc. and contributors
+License type: BSD 3-Clause License
+Applied to: Build system generator files and CMake modules in cmake/
+Use: Configure and build DataScythe native targets. Not redistributed in release
+     zip artifacts.
+
+Notice 5
+Source project or author: Microsoft Windows SDK / Win32 API
+License type: Microsoft Software License Terms (SDK and Visual Studio components)
+Applied to: platform/windows/ implementations using Windows.h, winioctl.h,
+     DeviceIoControl, CreateFile, Set-AuthenticodeSignature integration
+Use: Windows drive enumeration, raw device I/O, ATA pass-through, NVMe
+     STORAGE_PROTOCOL_COMMAND, Authenticode signing workflows.
+
+Notice 6
+Source project or author: Standard C++ library implementations (libstdc++ / libc++)
+License type: LGPL v3 with linking exception (GCC) or Apache / LLVM licenses
+Applied to: C++17 standard library facilities used throughout src/ and apps/
+Use: Containers, threading, chrono, random number facilities, file streams.
+
+Redistribution Summary for v0.1.0 Windows Zip
+-------------------------------------------
+
+The promoted DataScythe-0.1.0-win64.zip contains Qt 6 shared libraries and
+MinGW runtime DLLs alongside DataScythe binaries. Source code for Qt is available
+under Qt LGPL obligations. GNU coreutils source reference is available in-tree at
+docs/reference/shred.c.
+
+Operators distributing modified binaries must comply with LGPL v3 (Qt),
+GPL v3 (if combining with GPLv3 code beyond the reference), and applicable
+MinGW runtime terms.
+
+This notice file is informational. It does not replace LICENSE.md at the
+repository root or license texts embedded in third-party packages.
