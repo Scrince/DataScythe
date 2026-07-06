@@ -1,0 +1,128 @@
+DataScythe v0.1.0 - Linux Release Notes
+=============================================
+
+Release status
+--------------
+
+This file records Linux build and release expectations for DataScythe v0.1.0.
+The promoted v0.1.0 artifact set includes a Linux amd64 CLI archive staged under
+releases/native/linux/. See Release_v0.1.0.txt for the full promotion record.
+
+Scope
+-----
+
+This document records Linux-specific build, installation, verification, and
+operational notes for source builds of DataScythe v0.1.0.
+
+
+Release Artifacts (Current)
+---------------------------
+
+The v0.1.0 Linux release set includes:
+
+  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz
+  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz.asc
+
+The archive contains the datascythe CLI binary under bin/. Hashes are recorded
+in docs/SHA256SUMS and detached PGP signatures are published alongside the
+archive.
+
+
+Source Build Requirements
+-------------------------
+
+  CMake 3.16 or newer
+  GCC or Clang with C++17 support
+  Qt 6 development packages when DATASCYTHE_BUILD_GUI=ON
+  root or CAP_SYS_RAWIO-equivalent access for raw block device operations
+
+Typical commands:
+
+  cmake -B build -DCMAKE_BUILD_TYPE=Release
+  cmake --build build
+  ctest --test-dir build --output-on-failure
+
+GUI launch:
+
+  sudo ./build/apps/gui/DataScythe
+
+CLI examples:
+
+  sudo ./build/apps/cli/datascythe --list-drives
+  sudo ./build/apps/cli/datascythe --mode quick --yes /dev/sdX
+
+
+Runtime Dependencies
+--------------------
+
+CLI-only builds link platform backends for Linux block devices. GUI builds
+require Qt 6 shared libraries at runtime (libQt6Core, libQt6Gui, libQt6Widgets,
+and platform plugins). Exact package names vary by distribution.
+
+
+Device Path Conventions
+-----------------------
+
+Physical drives:
+
+  /dev/sdX     SCSI/SATA/USB block devices
+  /dev/nvme0n1 NVMe namespaces
+
+Volume shred mode opens the mount point path (for example /mnt/data) rather than
+the raw device node when mode is volume.
+
+Always confirm by model and size from --list-drives before destructive commands.
+
+
+Privilege Model
+-----------------
+
+Linux preflight checks require root for modes that open raw devices or issue
+hardware commands. File shred modes may run unprivileged when file permissions
+allow read/write access.
+
+Do not grant routine operators permanent passwordless sudo for datascythe.
+
+
+SSD Hardware Secure Erase
+-------------------------
+
+Linux platform/secure_erase.cpp support depends on build configuration and
+distribution ioctl availability. Operators should verify is_supported messaging
+from the CLI before relying on hardware sanitize on Linux. When unsupported, use
+FullDeviceWipe with appropriate pass settings.
+
+
+Verification on Linux
+---------------------
+
+When promoting future Linux release archives, verify SHA-256 digests from
+docs/SHA256SUMS before use:
+
+  sha256sum releases/native/linux/*
+
+Compare output byte-for-byte against the manifest. Verify PGP signatures on the
+manifest and archives when .asc files are published.
+
+
+Release Harness
+---------------
+
+The repository includes:
+
+  tests/release-harness/linux-release-harness.sh
+  tests/release-harness/run-release-harness.py
+
+Run after building to exercise packaging assumptions. Harness success does not
+imply hardware erase certification.
+
+
+Operational Notes
+---------------
+
+  - Unmount volumes before whole-device erase when possible
+  - Beware multipath (/dev/mapper) and LVM virtual nodes masking physical disks
+  - Document serial numbers externally; ERASE N phrases use enumerator indices
+  - See OpSec.txt and Limitations.txt for environmental controls
+
+Related documentation: BuildReproducability.txt, UserGuide.txt.
