@@ -1,0 +1,4 @@
+add_executable(datascythe_tests test_core.cpp)
+target_link_libraries(datascythe_tests PRIVATE datascythe_core)
+
+add_test(NAME core_tests COMMAND datascythe_tests)
