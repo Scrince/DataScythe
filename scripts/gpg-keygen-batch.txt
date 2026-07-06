@@ -1,0 +1,6 @@
+%no-protection
+Key-Type: RSA
+Key-Length: 4096
+Name-Real: DataScythe Release Signing (2026)
+Name-Email: release@datascythe.local
+Expire-Date: 0
