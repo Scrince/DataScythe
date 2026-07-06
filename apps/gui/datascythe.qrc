@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/icons">
+        <file alias="datascythe.png">resources/datascythe-icon-256x256.png</file>
+    </qresource>
+</RCC>
