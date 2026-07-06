@@ -1,0 +1,149 @@
+﻿DataScythe v0.1.0 - Release Notes
+==============================
+
+Release date: 2026-07-05
+
+DataScythe reports kAppVersion 0.1.0 in src/core/version.h. The CLI --version
+flag and GUI title bar reference this value.
+
+Highlights
+----------
+
+- Initial promoted native release with YellowSphere-style repository layout.
+- GNU shred-inspired pass scheduling from docs/reference/shred.c.
+- Full-device wipe, quick zero-fill, volume shred, file/folder shred.
+- NTFS alternate data stream shredding on Windows.
+- Partition metadata wipe (first and last 1 MiB on block devices).
+- Post-erase verification with sparse 512-byte samples.
+- Erasure certificate export and GUI auto-save.
+- Pre-flight checks with Administrator enforcement on Windows.
+- Typed GUI confirmation (ERASE N, SHRED FILES, SHRED FOLDER) plus final Yes/No.
+- CLI interactive YES confirmation (skippable with --yes).
+- SSD hardware secure erase: NVMe Sanitize and ATA SECURITY ERASE on Windows.
+- Detached PGP release signatures and SHA256SUMS manifest.
+- Local Authenticode code-signing certificate for maintainer use.
+
+
+Artifact status
+---------------
+
+This note documents the promoted v0.1.0 source build and checked-in native
+release archives:
+
+  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz
+  releases/native/macos/DataScythe-0.1.0-macos.tar.gz
+  releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz
+  releases/native/windows/DataScythe-0.1.0-win64.zip
+  releases/native/windows/DataScythe-0.1.0-win64/
+
+Application binaries built from source:
+
+  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz: bin/datascythe
+  releases/native/macos/DataScythe-0.1.0-macos.tar.gz: bin/datascythe
+  releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz: bin/datascythe
+  build/apps/cli/datascythe.exe
+  build/apps/gui/DataScythe.exe
+
+The release zip packages DataScythe.exe, datascythe-cli.exe, Qt 6.9.0 MinGW
+runtime dependencies, and README.txt. The Linux and macOS archives are CLI-only
+packages because Qt development packages were not installed on the build hosts.
+
+
+Documentation suite
+-------------------
+
+Operator and normative specifications in docs/:
+
+  UserGuide.txt
+  FileFormat.txt
+  EraseEngine.txt
+  PassScheduling.txt
+  Confirmation.txt
+  Limitations.txt
+  OpSec.txt
+  TestVectors.txt
+  LinuxRelease.txt
+  BuildReproducability.txt
+  ThirdPartyNotices.txt
+  CodeSigning.txt
+  Release_v0.1.0.txt
+
+Hash and signature artifacts:
+
+  docs/SHA256SUMS
+  docs/SHA256SUMS.asc
+
+
+PGP release signatures
+----------------------
+
+Detached ASCII-armored PGP signatures are included next to release artifacts as
+.asc files. The release-signing public key is:
+
+  docs/DataScythe_Release_Signing_2026_pubkey.asc
+
+Release signing key:
+
+  DataScythe Release Signing (2026) <release@datascythe.local>
+  Fingerprint: 72E7 D550 77BA 8D7D 425B DC76 6133 2D0E 78FE F1CF
+
+Verify the public key fingerprint before trusting signatures:
+
+  gpg --show-keys docs/DataScythe_Release_Signing_2026_pubkey.asc
+
+Verify the checksum manifest:
+
+  gpg --verify docs/SHA256SUMS.asc docs/SHA256SUMS
+
+Verify the Windows release archive:
+
+  gpg --import docs/DataScythe_Release_Signing_2026_pubkey.asc
+  gpg --verify releases/native/windows/DataScythe-0.1.0-win64.zip.asc releases/native/windows/DataScythe-0.1.0-win64.zip
+
+Verify the Linux and macOS release archives:
+
+  gpg --verify releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz.asc releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz
+  gpg --verify releases/native/macos/DataScythe-0.1.0-macos.tar.gz.asc releases/native/macos/DataScythe-0.1.0-macos.tar.gz
+  gpg --verify releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz.asc releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz
+
+These PGP signatures provide release-integrity verification. They do not replace
+Windows Authenticode signing for SmartScreen publisher trust.
+
+
+Code signing certificate
+------------------------
+
+Local maintainer Authenticode certificate (public):
+
+  docs/DataScythe_Local_Code_Signing_2026.cer
+  Thumbprint: 5F177B17AB42FFD65969B3B0B2D5B739D0283742
+
+Private exports are gitignored under .gnupg-release/. See CodeSigning.txt.
+
+
+SHA-256 manifest
+----------------
+
+  99842e2ff920ee5c420bac8e319a2794380224ef414b9f43accd9a32486ff716  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz
+  51086ee3e9310bf4a9e234f4f8cb2e65b487709a52dd54eaa10e2e2eb5c177e8  releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz
+  67a136b230e5cfe5dcea496a66ab022d2b646912f208eb1421a2bd93b92b3bed  releases/native/macos/DataScythe-0.1.0-macos.tar.gz
+  445863dffdf3ad7267cf752ceba0103bb6febc2ad72de18a764399fcc8da5d20  releases/native/windows/DataScythe-0.1.0-win64.zip
+
+
+Known limitations
+-----------------
+
+- Drive sizes may display as 0 without Administrator on Windows.
+- NVMe SSDs may display as HDD in the drive list (cosmetic classification).
+- Verification skips comparison when the final pass used random data.
+- SSD crypto erase may not read as zeros during verification.
+- Unit tests cover core logic only, not destructive hardware integration.
+- Linux/macOS archives are CLI-only for v0.1.0.
+
+
+Migration notes
+---------------
+
+See MIGRATION.md at the repository root for layout changes from earlier
+prototypes. CLI binary in release zip is datascythe-cli.exe to avoid case
+collision with DataScythe.exe on Windows.
