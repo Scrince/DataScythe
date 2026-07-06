@@ -1,0 +1,232 @@
+﻿DataScythe v0.1.0 - Confirmation and Acknowledgment Specification
+======================================================================
+
+Release Boundary
+----------------
+
+This document specifies the promoted production DataScythe v0.1.0 confirmation
+gates implemented in apps/gui/confirmation_dialog.cpp, apps/gui/main_window.cpp,
+and apps/cli/main.cpp.
+
+Version 0.1.0 does not implement time-based session timeout or automatic secret
+clearing. Confirmation phrases are the sole software acknowledgment before
+destructive I/O begins.
+
+
+Scope
+-----
+
+This document specifies the exact confirmation strings, comparison rules, dialog
+sequence, and CLI bypass flag for every destructive operation surface.
+
+Confirmation phrases are independent of erase pass count, verification settings,
+or certificate export options. Changing those settings does not alter the
+required phrase.
+
+
+Primary Rule
+------------
+
+Treat confirmation as a deliberate human acknowledgment of target identity and
+operation type. The software does not infer intent from drive selection alone.
+
+
+Confirmation Classes
+--------------------
+
+Class D: drive-level operations
+
+  Applies to:
+      FullDeviceWipe
+      QuickZeroFill
+      ShredVolume
+      SsdSecureErase
+
+  Phrase:
+
+      ERASE <physical_index>
+
+  Where physical_index is DriveInfo.physical_index for the selected table row.
+  The integer is decimal without leading zeros or suffix text.
+
+  Examples:
+
+      ERASE 0
+      ERASE 2
+      ERASE 12
+
+Class F: file shred operations
+
+  Applies to:
+      ShredFiles (one or more files)
+
+  Phrase:
+
+      SHRED FILES
+
+  Case-sensitive. Single ASCII space between SHRED and FILES.
+
+Class O: folder shred operations
+
+  Applies to:
+      ShredDirectory
+
+  Phrase:
+
+      SHRED FOLDER
+
+  Case-sensitive. Single ASCII space between SHRED and FOLDER.
+
+Class C: CLI universal acknowledgment
+
+  Applies to:
+      All CLI destructive operations when --yes is not set
+
+  Phrase:
+
+      YES
+
+  Case-sensitive. No surrounding whitespace after trim is not applied; the
+  implementation compares input == "YES" exactly as read by std::getline.
+
+
+GUI Typed Confirmation Dialog
+-----------------------------
+
+Component: ConfirmationDialog (modal QDialog)
+
+Window title:
+
+  Confirm Destructive Operation
+
+Drive constructor fields:
+
+  required_phrase_ = QString("ERASE %1").arg(drive.physical_index)
+
+Path constructor fields:
+
+  required_phrase_ = supplied confirmation_phrase (SHRED FILES / SHRED FOLDER)
+
+Warning label HTML includes:
+
+  device or target path in <pre>
+  operation title (bold)
+  operation description
+  required phrase (bold)
+
+Phrase input:
+
+  QLineEdit with placeholder equal to required_phrase_
+
+Accept button:
+
+  Text: "I understand, erase now"
+  Enabled only when phrase_edit.text().trimmed() == required_phrase_
+
+Trim rule:
+
+  QString::trimmed() removes leading and trailing whitespace from operator
+  input before comparison. Internal double spaces cause rejection.
+
+Reject path:
+
+  Cancel button or window close --> dialog not accepted, operation aborted.
+
+
+GUI Final Confirmation Dialog
+-----------------------------
+
+After the typed phrase dialog returns Accepted, main_window presents a second
+QMessageBox::critical:
+
+Drive operations:
+
+  Title: "Final confirmation"
+  Text:  "Last chance: permanently erase <device_path>?"
+  Buttons: Yes | No (default No)
+
+File/folder operations:
+
+  Title: "Final confirmation"
+  Text:  "Last chance: permanently shred\n<path>?"
+  Buttons: Yes | No (default No)
+
+Both dialogs must succeed for the GUI to start the erase job.
+
+
+CLI Confirmation Procedure
+--------------------------
+
+When --yes is absent:
+
+  1. Print WARNING line with target summary to stderr.
+  2. Print "Type YES to confirm: " without newline.
+  3. Read one line from stdin via std::getline.
+  4. Accept only when line equals "YES" exactly.
+  5. Any other input prints "Aborted." and exits code 1.
+
+When --yes is present:
+
+  Skip stdin confirmation entirely. Pre-flight checks still run.
+
+
+Operations Without Typed Phrase
+-------------------------------
+
+The following do not use ERASE / SHRED phrases but still require CLI YES unless
+--yes is set:
+
+  --mode full | quick | volume | files | folder | ssd-secure
+
+Drive phrases never apply to CLI file paths. CLI file and folder modes use YES
+only, not SHRED FILES / SHRED FOLDER strings.
+
+
+Blocked Operations (No Confirmation Reached)
+--------------------------------------------
+
+System drive blocking occurs before confirmation:
+
+  GUI: critical message "Operations on the system drive are blocked..."
+  CLI: "Refusing to erase system target: <path>" exit 1
+
+Pre-flight failure occurs before confirmation when checks return errors.
+
+SSD secure erase unsupported: GUI warning dialog, CLI error before confirmation.
+
+
+Phrase Security Properties
+----------------------------
+
+Confirmation phrases:
+
+  - Are not secrets and are not stored after the dialog closes
+  - Do not appear in erasure certificates
+  - Do not appear in exported logs unless the operator typed them visibly
+  - Do not protect against a compromised GUI process or CLI wrapper
+  - Do not substitute for physical drive identification
+
+The ERASE N phrase binds acknowledgment to the enumerated physical_index at
+confirmation time. If the drive list changes between confirmation and execution,
+the operator must cancel and reconfirm. The GUI starts the job immediately after
+confirmation without revalidating the phrase against a refreshed table.
+
+
+Automation Hazard
+-----------------
+
+--yes exists for scripted maintenance on confirmed maintenance windows. Scripts
+must hard-code target paths and mode flags explicitly. Combining --yes with
+wrong drive indices is equivalent to bypassing the only interactive safety gate
+in the CLI.
+
+There is no DataScythe equivalent of a stored credential or keyfile. Each run
+requires fresh acknowledgment unless --yes is supplied.
+
+
+Related Documentation
+---------------------
+
+  UserGuide.txt     Operator workflows using confirmation
+  OpSec.txt         Environmental controls around destructive sessions
+  Limitations.txt   Data destruction boundaries after confirmed erase
