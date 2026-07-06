@@ -1,0 +1,205 @@
+DataScythe - Build Reproducibility Specification
+======================================================
+
+v0.1.0 Windows release boundary (2026-07-05)
+--------------------------------------------
+
+The v0.1.0 Windows release was built from the promoted source tree on a Windows
+workspace using:
+
+  CMake 3.16+ (Qt Tools CMake_64)
+  MinGW 13.1.0 (C:\Qt\Tools\mingw1310_64\bin)
+  Qt 6.9.0 mingw_64 (C:\Qt\6.9.0\mingw_64)
+  CMAKE_BUILD_TYPE=Release
+
+The measured Windows release artifact in docs/SHA256SUMS is:
+
+  445863dffdf3ad7267cf752ceba0103bb6febc2ad72de18a764399fcc8da5d20  releases/native/windows/DataScythe-0.1.0-win64.zip
+
+Unit tests passed with:
+
+  ctest --test-dir build --output-on-failure
+
+PGP detached signatures were generated for the zip, staged exes, and SHA256SUMS
+using the release key documented in Release_v0.1.0.txt.
+
+
+Scope
+-----
+
+This document defines build inputs, host environments, commands, outputs, and
+verification rules for the current v0.1.0 release set.
+
+The filename preserves the project-local spelling:
+
+  BuildReproducability.txt
+
+The canonical source of truth for application behavior is the src/ tree with
+apps/cli and apps/gui entry points.
+
+The release hash manifest for official release surfaces is:
+
+  docs/SHA256SUMS
+
+This document does not replace SHA-256 verification. It records the build
+procedure and the expected artifact boundary so rebuilders can determine whether
+their outputs match the published v0.1.0 Windows archive.
+
+
+Release Surfaces
+----------------
+
+The v0.1.0 release set covered by docs/SHA256SUMS is:
+
+  releases/native/windows/DataScythe-0.1.0-win64.zip
+
+Staged directory contents (inside the zip):
+
+  DataScythe.exe
+  datascythe-cli.exe
+  Qt 6 runtime DLLs and plugins
+  README.txt
+
+Detached signatures (when signing script has been run):
+
+  releases/native/windows/DataScythe-0.1.0-win64.zip.asc
+  releases/native/windows/DataScythe-0.1.0-win64/DataScythe.exe.asc
+  releases/native/windows/DataScythe-0.1.0-win64/datascythe-cli.exe.asc
+  docs/SHA256SUMS.asc
+
+Linux and macOS native archives under releases/native/ are placeholders for
+future promotions and are not part of the v0.1.0 hash manifest unless added to
+SHA256SUMS in a later release.
+
+
+Windows Reference Build Procedure
+---------------------------------
+
+Environment setup (PowerShell):
+
+  $env:PATH = "C:\Qt\Tools\CMake_64\bin;C:\Qt\Tools\mingw1310_64\bin;" + $env:PATH
+
+Configure:
+
+  cmake -B build -G "MinGW Makefiles" `
+    -DCMAKE_PREFIX_PATH="C:\Qt\6.9.0\mingw_64" `
+    -DCMAKE_BUILD_TYPE=Release
+
+Build:
+
+  cmake --build build
+
+Test:
+
+  ctest --test-dir build --output-on-failure
+
+Outputs:
+
+  build/apps/cli/datascythe.exe
+  build/apps/gui/DataScythe.exe
+  build/tests/datascythe_tests.exe
+
+
+Release Staging Procedure
+-------------------------
+
+After a successful build:
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare_release_assets.ps1
+  python scripts/generate_sha256sums.py
+
+prepare_release_assets.ps1 copies GUI runtime DLLs and plugins, renames CLI to
+datascythe-cli.exe in the stage folder, writes README.txt, and creates:
+
+  releases/native/windows/DataScythe-0.1.0-win64/
+  releases/native/windows/DataScythe-0.1.0-win64.zip
+
+generate_sha256sums.py rewrites docs/SHA256SUMS from release artifacts.
+
+
+Maintainer Signing Procedure
+----------------------------
+
+PGP release signatures:
+
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/sign_release_assets.ps1
+
+Private OpenPGP key material:
+
+  .gnupg-release/private-keys-v1.d/*.key (gitignored)
+
+Release public key:
+
+  docs/DataScythe_Release_Signing_2026_pubkey.asc
+  Fingerprint: 72E7 D550 77BA 8D7D 425B DC76 6133 2D0E 78FE F1CF
+
+Authenticode signing (optional, separate from PGP):
+
+  docs/DataScythe_Local_Code_Signing_2026.cer
+  .gnupg-release/private-keys-v1.d/DataScythe_Local_Code_Signing_2026.pfx
+
+See CodeSigning.txt for certificate inspection and Set-AuthenticodeSignature
+commands.
+
+
+Verification Procedure (Operators)
+----------------------------------
+
+  1. gpg --import docs/DataScythe_Release_Signing_2026_pubkey.asc
+  2. gpg --verify docs/SHA256SUMS.asc docs/SHA256SUMS
+  3. sha256sum releases/native/windows/DataScythe-0.1.0-win64.zip
+  4. Compare digest to SHA256SUMS
+  5. gpg --verify releases/native/windows/DataScythe-0.1.0-win64.zip.asc \
+        releases/native/windows/DataScythe-0.1.0-win64.zip
+
+On Windows without sha256sum:
+
+  CertUtil -hashfile releases\native\windows\DataScythe-0.1.0-win64.zip SHA256
+
+
+Reproducibility Limits
+----------------------
+
+v0.1.0 Windows binaries are not fully reproducible across arbitrary hosts
+because:
+
+  - Qt deployment copies toolchain-dependent DLLs via windeployqt semantics
+  - Timestamps are embedded in PE headers
+  - CMake build IDs may vary
+  - Authenticode signatures alter PE contents when applied
+
+Rebuilders should expect functional equivalence, not byte-identical PE files,
+unless a future release documents a hermetic build container.
+
+The zip archive hash in SHA256SUMS is the authoritative release boundary for
+v0.1.0 distribution.
+
+
+Linux and macOS Source Builds
+------------------------------
+
+Generic commands:
+
+  cmake -B build -DCMAKE_BUILD_TYPE=Release
+  cmake --build build
+  ctest --test-dir build --output-on-failure
+
+Platform backends live under platform/linux and platform/macos. No checked-in
+release archive hashes are published for these targets in v0.1.0.
+
+
+Python Launcher
+---------------
+
+DataScythe.py delegates to the CLI binary for compatibility. It is not part of
+the v0.1.0 SHA256SUMS manifest. Python packaging is not a promoted release
+surface for v0.1.0.
+
+
+Related Documentation
+---------------------
+
+  Release_v0.1.0.txt    Promotion checklist and artifact list
+  CodeSigning.txt       Authenticode certificate handling
+  LinuxRelease.txt      Linux-specific release status
+  UserGuide.txt         Operator verification commands
