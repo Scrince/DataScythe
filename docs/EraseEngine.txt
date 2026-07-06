@@ -1,0 +1,311 @@
+﻿DataScythe v0.1.0 - Erase Engine Internals
+================================================
+
+Release Boundary
+----------------
+
+This is the normative erase-engine specification for the promoted production
+DataScythe v0.1.0 native build. The authoritative implementation is
+src/core/erase_engine.cpp with platform I/O injected through IRawDevice.
+
+Hardware secure erase (SSD) is implemented in platform/windows/secure_erase.cpp
+and dispatches through ISecureErase rather than EraseEngine overwrite passes.
+NVMe admin command packing is specified in src/platform/nvme_admin.h.
+
+
+Scope
+-----
+
+This document defines the computational pipeline for software overwrite erasure:
+
+  target open and size resolution
+  volume dismount attempts on block devices
+  partition metadata zero wipe
+  pass schedule execution
+  per-chunk buffered writes
+  flush and progress reporting
+  post-erase verification samples
+  cancellation handling
+
+PassScheduling.txt defines schedule construction and pattern bytes.
+partition_table.cpp defines metadata region geometry. Limitations.txt defines
+regions the engine cannot reach.
+
+
+Architectural Invariants
+------------------------
+
+For fixed inputs on a conforming platform implementation, software overwrite is
+deterministic except:
+
+  - Random pass buffers (pattern_type < 0) use std::mt19937_64
+  - Random pass slot placement uses the PassScheduler RNG
+
+The engine never contacts remote services. It operates only on bytes exposed
+through IRawDevice read_at, write_at, size_bytes, flush, dismount_volumes,
+remove_target, and target_type.
+
+The following are intentionally outside the erase engine:
+
+  - Remote backup deletion
+  - TRIM/UNMAP-induced block reclamation semantics
+  - Firmware HPA/DCO reprogramming
+  - Guaranteed destruction of SSD wear-leveling pools
+  - RAID controller-managed media behind a virtual disk
+  - OS page cache coherency for other processes' mappings
+
+Every software erase emits this warning in EraseResult.warnings:
+
+  "Best-effort overwrite of OS-addressable sectors only. SSD wear-leveling,
+   HPA/DCO, and firmware regions may retain data."
+
+
+High-Level Pipeline
+-----------------
+
+  erase_target(path, config)
+       |
+       +-- ShredFiles / ShredDirectory --> erase_paths()
+       |
+       +-- other modes --> open path
+                |
+                +-- FullDeviceWipe / QuickZeroFill --> dismount_volumes (best effort)
+                |
+                +-- effective_size()
+                |
+                +-- optional wipe_partition_metadata()
+                |
+                +-- erase_single_open_target()
+                         |
+                         +-- QuickZeroFill --> run_quick_zero()
+                         |
+                         +-- else --> run_passes()
+                |
+                +-- optional remove_target for regular files
+                |
+                v
+            EraseResult
+
+erase_paths collects files via PathCollector, sums per-file byte budgets for
+progress, and calls erase_single_open_target for each file sequentially.
+
+
+Size Resolution
+---------------
+
+effective_size(device, config):
+
+  size = device.size_bytes()
+  if round_file_size_to_block && target_type == RegularFile:
+      block = device.block_size()
+      if block > 1:
+          size = round up to next multiple of block
+
+Block device size comes from platform IOCTL or seek/end. Zero size aborts with
+InvalidTarget.
+
+
+Buffer and Chunk Constants
+--------------------------
+
+EraseEngine::kBufferSize = 1048576 (1 MiB)
+EraseEngine::kSectorSize = 512
+PatternGenerator::kSectorSize = 512
+
+write_full_pass loops in kBufferSize chunks except the tail chunk, which may be
+smaller. For pattern_type < 0 (random), each chunk is filled with fresh random
+bytes via PatternGenerator::fill_random before write.
+
+
+Partition Metadata Wipe
+-----------------------
+
+When wipe_partition_metadata is true and target_type is BlockDevice and mode is
+FullDeviceWipe or QuickZeroFill:
+
+  regions = partition_metadata_regions(device_size)
+
+Constants:
+
+  kPartitionMetadataWipeBytes = 1048576 (1 MiB)
+
+Region rules:
+
+  front_size = min(device_size, 1 MiB) at offset 0
+  back_size  = 1 MiB at offset (device_size - 1 MiB) when device_size > 2 MiB
+  otherwise back_size = 0
+
+Wipe uses 64 KiB zero buffers written sequentially. Progress label:
+
+  "partition metadata (start)"
+  "partition metadata (backup)"
+
+Metadata bytes count toward overall_bytes_total and overall_bytes_done before
+data passes begin.
+
+
+Quick Zero-Fill
+---------------
+
+run_quick_zero executes one write_full_pass with pattern_type 0x000 across
+total_size. Optional verify_pass(0x000) follows.
+
+Result message on success:
+
+  "Quick zero-fill completed"
+
+
+Pass Execution
+--------------
+
+run_passes:
+
+  1. schedule = PassScheduler::build_schedule(pass_count, use_random_passes)
+  2. Prepend encoded custom_patterns from config.custom_patterns
+  3. data_passes = schedule.size()
+  4. total_passes = data_passes + (final_zero_pass ? 1 : 0)
+  5. For each schedule entry: write_full_pass(pattern, ...)
+  6. If final_zero_pass: write_full_pass(0x000, label "0x00 (final)")
+  7. If verify_after_erase: verify_pass(final_verification_pattern(), ...)
+
+Custom pattern encoding:
+
+  encoded = value & 0xfff
+  if flip_first_bit_per_sector: encoded |= 0x1000
+
+final_verification_pattern():
+
+  QuickZeroFill --> 0x000
+  final_zero_pass true --> 0x000
+  else last schedule entry, or 0x000 when schedule empty
+
+
+Write Pass Internals
+--------------------
+
+write_full_pass(pattern_type, total_size, pass_index, total_passes, label, ...):
+
+  Fill 1 MiB buffer once via PatternGenerator::fill_buffer for fixed patterns.
+  For random patterns, refill each chunk with fill_random.
+
+  Loop offset from 0 to total_size:
+      chunk = min(kBufferSize, total_size - offset)
+      device.write_at(offset, buffer, chunk)
+      on failure: advance offset to next 512-byte sector boundary and retry
+      update overall_bytes_done and progress callback
+
+  device.flush() after pass completes (warnings on flush failure do not abort)
+
+Cancellation checks occur between chunks. cancel_requested sets EraseError::Cancelled.
+
+
+Verification
+------------
+
+verify_pass(pattern_type, total_size):
+
+  expected = PatternGenerator buffer for pattern_type, 512 bytes
+  Sample offsets: 0, total_size/2, total_size-512 (when size permits)
+  Read to_read = min(512, total_size - offset) bytes
+  memcmp actual vs expected
+
+On mismatch:
+
+  verification_passed = false
+  warning with offset
+
+When final pass used random data (pattern < 0):
+
+  Warning: "Verification skipped because the final pass used random data."
+  verification_passed = true (verification not performed)
+
+verify_target_zeroed (standalone helper for SSD path):
+
+  Opens device, reads same three offsets, expects all zero bytes.
+
+
+Progress and ETA
+----------------
+
+OperationContext tracks:
+
+  overall_bytes_total
+  overall_bytes_done
+  file_index / file_count (multi-file jobs)
+  current_target
+  started steady_clock time point
+
+overall_percent = overall_bytes_done / overall_bytes_total * 100
+
+eta_seconds:
+
+  when overall_bytes_done > 0 and elapsed_sec > 0:
+      bytes_per_sec = overall_bytes_done / elapsed_sec
+      eta = (overall_bytes_total - overall_bytes_done) / bytes_per_sec
+  else -1
+
+Progress callback returning false sets cancel_requested.
+
+
+File and Directory Shredding
+----------------------------
+
+erase_paths:
+
+  PathCollector::collect_files per input path
+  Honors recursive and shred_alternate_data_streams
+  Skips files that fail open with warnings
+  remove_after_shred calls device.remove_target after successful shred
+
+Empty collection returns InvalidTarget "No files found to shred".
+
+
+SSD Hardware Secure Erase (Windows)
+-----------------------------------
+
+ISecureErase::execute opens \\.\PhysicalDriveN with read/write access.
+
+Bus detection via IOCTL_STORAGE_QUERY_PROPERTY:
+
+  BusTypeNvme --> NVMe Sanitize
+  BusTypeAta / BusTypeSata / BusTypeScsi --> ATA SECURITY ERASE
+  other --> unsupported
+
+NVMe sequence:
+
+  1. Sanitize BlockErase (opcode 0x84, action 2)
+  2. On failure, Sanitize CryptoErase (action 4)
+  3. Poll Sanitize Status log (LID 0x81) every 2 seconds up to 60 minutes
+  4. progress = sanitize_progress_percent(SPROG)
+  5. SPROG 0xFFFF means complete
+
+ATA sequence:
+
+  SECURITY ERASE PREPARE: command 0xF3, value 0x0022
+  SECURITY ERASE UNIT:    command 0xF4, value 0x0022
+
+Warnings on failure mention frozen drives, RAID, and Administrator requirement.
+
+
+Error Taxonomy
+--------------
+
+EraseError values used by the engine:
+
+  Cancelled       Operator cancelled mid-operation
+  AccessDenied    Open failure or permission error
+  InvalidTarget   Zero size or missing files
+  IoError         Unrecoverable write/read failure or verification failure
+
+Partial writes may leave the target in an undefined state. Do not assume
+partial failure preserved original data.
+
+
+Related Documentation
+---------------------
+
+  PassScheduling.txt    Schedule and pattern byte construction
+  FileFormat.txt        Certificate and log serialization
+  Limitations.txt       Non-addressable retention regions
+  TestVectors.txt       Engine conformance vectors
+  docs/reference/shred.c  GNU reference for pattern tables
