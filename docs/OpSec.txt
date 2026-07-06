@@ -1,0 +1,250 @@
+﻿DataScythe v0.1.0 - Operational Security Specification
+============================================================
+
+Release Boundary
+----------------
+
+This document specifies operational security requirements for DataScythe v0.1.0.
+It is tied to the actual implementation: drive enumeration, destructive erase,
+certificate export, log export, CLI --yes bypass, and release signature
+verification.
+
+Version 0.1.0 does not implement secure memory locking, kernel driver
+attestation, or anti-forensics guarantees beyond overwrite and optional
+verification.
+
+
+Scope
+-----
+
+This document defines how an operator should handle destructive erase sessions,
+release artifacts, and exported records so that technical controls are not
+defeated by the environment.
+
+EraseEngine.txt defines overwrite behavior. Limitations.txt defines retention
+boundaries. Confirmation.txt defines acknowledgment gates. This document defines
+operator posture around those mechanisms.
+
+
+Primary Rule
+------------
+
+Treat every erase session as irreversible destruction of selected data.
+
+Even when shredding a single file, the same session may involve:
+
+  - Paths and filenames revealing sensitive activity
+  - Administrator credentials on Windows
+  - Exported certificates and logs describing targets
+  - Progress timing correlating to data volume
+  - Partial failures leaving forensic artifacts
+
+The correct stance is that the operating system, display, backup systems,
+adjacent network hosts, and physical workspace are part of the security
+boundary.
+
+
+Threat Model
+------------
+
+In scope:
+
+  Wrong-target erase:
+      Operator selects incorrect drive index or path. Confirmation phrases do
+      not validate model serial numbers. Prevention is procedural verification.
+
+  Incomplete destruction:
+      SSD wear-leveling, firmware regions, or remote backups retain data after
+      a successful UI message. See Limitations.txt.
+
+  Verification false confidence:
+      Sparse samples pass while unsampled regions or hidden areas retain data.
+
+  Release tampering:
+      Attacker substitutes malicious binaries. Mitigation: SHA256SUMS and PGP
+      signature verification before execution.
+
+  Privilege abuse:
+      Administrator session can erase any non-system raw device. Physical access
+      plus elevation is sufficient for destruction.
+
+  Exported artifact mishandling:
+      Certificates and logs stored on synced folders or shared drives leak
+      operational metadata.
+
+  Script automation error:
+      --yes removes CLI confirmation. A typo in a script path is immediately
+      destructive.
+
+Out of scope:
+
+  - Compromised firmware or kernel before the session begins
+  - Hardware keyloggers and cameras observing the screen
+  - Coercion of the operator
+  - Recovery of data after successful full-device overwrite or sanitize
+  - Malicious modification of source code without detection on rebuild
+
+For high-assurance sanitization, use dedicated maintenance hardware, offline
+verification of release hashes, and independent media logging.
+
+
+Pre-Session Checklist
+---------------------
+
+Before any destructive operation:
+
+  - Verify docs/SHA256SUMS hash of the binary or release zip
+  - Verify detached .asc PGP signatures when available
+  - Confirm elevated session on Windows for drive-level work
+  - Disconnect or identify network backups that could restore data
+  - Record target model, serial, and device_path outside the tool
+  - Confirm the system drive is not selected
+  - Decide certificate and log storage location in advance
+  - Ensure no other operators share the machine session
+
+Do not begin drive erase on a machine you believe is remotely compromised.
+
+
+Release Integrity
+-----------------
+
+Trusted release-signing public key:
+
+  docs/DataScythe_Release_Signing_2026_pubkey.asc
+  Fingerprint: 72E7 D550 77BA 8D7D 425B DC76 6133 2D0E 78FE F1CF
+
+Verify:
+
+  gpg --verify docs/SHA256SUMS.asc docs/SHA256SUMS
+  gpg --verify <artifact>.asc <artifact>
+
+PGP confirms release signing identity. It does not prove Authenticode publisher
+trust on Windows.
+
+Maintainer Authenticode certificate (local signing only):
+
+  docs/DataScythe_Local_Code_Signing_2026.cer
+
+See CodeSigning.txt. End users may rely on PGP release signatures without
+installing the Authenticode certificate.
+
+
+Privilege Handling
+--------------------
+
+Windows drive-level operations require Administrator elevation.
+
+Risks of elevated erase sessions:
+
+  - Malware in the same session can also open raw devices
+  - Remote desktop exposes confirmation dialogs to observers
+  - Scripted --yes runs inherit full destructive capability
+
+Run elevated only for maintenance windows. Close the GUI and exit elevated
+shells after completion.
+
+
+Target Verification Discipline
+------------------------------
+
+Minimum identification steps:
+
+  1. Match physical_index with device_path in --list-drives output
+  2. Match model and serial with physical media label
+  3. Disconnect or label non-target removable drives
+  4. For file shred, use absolute paths; verify path in final dialog
+
+Never rely on drive type column alone. NVMe devices may display as HDD in v0.1.0.
+
+
+Confirmation Discipline
+-----------------------
+
+GUI:
+
+  Type ERASE N / SHRED FILES / SHRED FOLDER exactly
+  Read the final Yes/No dialog path carefully
+
+CLI:
+
+  Avoid --yes in interactive operator workflows
+  Use --yes only in controlled automation with path literals
+
+See Confirmation.txt for normative phrase rules.
+
+
+Certificate and Log Handling
+----------------------------
+
+Certificates contain:
+
+  Target paths
+  Mode and pass settings
+  Verification outcome
+  Warning text
+  Log excerpt lines
+
+Logs contain timestamps and operational messages.
+
+Storage rules:
+
+  - Do not save to cloud-synced directories unless policy allows
+  - Restrict filesystem ACLs on Windows certificate folders
+  - Treat exports as sensitive operational records, not public proof
+  - Certificates are unsigned; do not rely on them as legal tamper evidence alone
+
+
+Environmental Controls
+----------------------
+
+Recommended for high-sensitivity data:
+
+  - Dedicated offline maintenance workstation
+  - Disabled network interfaces during erase
+  - Physical port blocking for non-target drives
+  - Witnessed dual-operator target verification
+  - Separate audit notebook for serial numbers and timestamps
+  - Power-loss planning for long SSD sanitize operations
+
+Screen capture, help-desk remote control, and shoulder surfing expose target
+paths during confirmation dialogs.
+
+
+Post-Session Actions
+--------------------
+
+After completion or cancellation:
+
+  - Export and secure logs if audit trail is required
+  - Verify certificate contents match intended target
+  - Remove removable media labels indicating "wiped" status
+  - Do not reuse wiped drives for unrelated secret storage without policy review
+  - Document failed or cancelled jobs; partial wipes may be forensic artifacts
+
+
+Incident Response
+-----------------
+
+If wrong target erased:
+
+  1. Stop further I/O on affected media
+  2. Preserve certificates and logs for investigation
+  3. Notify stakeholders per organizational policy
+  4. Do not attempt in-tool recovery (unsupported)
+
+If verification fails:
+
+  1. Treat data destruction as uncertain
+  2. Re-run erase only after identifying failure cause
+  3. For SSD crypto erase failures, consider physical destruction policy
+
+
+Related Documentation
+---------------------
+
+  Limitations.txt           Technical retention boundaries
+  Confirmation.txt          Acknowledgment requirements
+  UserGuide.txt               Operator procedures
+  BuildReproducability.txt    Rebuild and hash verification
+  SECURITY.md                 Project security policy (repository root)
+  THREAT_MODEL.md             Project threat model (repository root)
