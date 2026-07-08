@@ -1,16 +1,23 @@
 #include "core/certificate.h"
+#include "core/clone_report.h"
+#include "core/drive_clone_engine.h"
 #include "core/erase_config.h"
+#include "core/erase_engine.h"
 #include "core/erase_result.h"
 #include "core/partition_table.h"
 #include "core/pass_scheduler.h"
 #include "core/pattern_generator.h"
+#include "core/sha256.h"
 #include "platform/nvme_admin.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -70,6 +77,13 @@ void test_pattern_generator_random() {
         }
     }
     expect_true(different, "random buffers should differ");
+}
+
+void test_sha256_abc() {
+    const std::string input = "abc";
+    expect_true(datascythe::sha256_hex(input.data(), input.size()) ==
+                    "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+                "sha256 abc vector");
 }
 
 void test_nvme_sanitize_progress() {
@@ -184,6 +198,215 @@ void test_final_verification_pattern_logic() {
                 "last schedule pattern without zero pass");
 }
 
+class MemoryRawDevice final : public datascythe::IRawDevice {
+public:
+    MemoryRawDevice(std::string expected_path, std::vector<std::uint8_t> bytes)
+        : expected_path_(std::move(expected_path)), bytes_(std::move(bytes)) {}
+
+    bool open(const std::string& path, std::string& error_out) override {
+        if (path != expected_path_) {
+            error_out = "unexpected path";
+            return false;
+        }
+        open_ = true;
+        return true;
+    }
+
+    void close() override { open_ = false; }
+    bool is_open() const override { return open_; }
+    datascythe::RawTargetType target_type() const override {
+        return datascythe::RawTargetType::BlockDevice;
+    }
+    std::uint64_t size_bytes(std::string&) const override { return bytes_.size(); }
+    std::uint64_t block_size(std::string&) const override { return 512; }
+
+    bool write_at(std::uint64_t offset, const void* data, std::size_t size,
+                  std::string& error_out) override {
+        if (offset + size > bytes_.size()) {
+            error_out = "write out of range";
+            return false;
+        }
+        const auto* source = static_cast<const std::uint8_t*>(data);
+        std::copy(source, source + size, bytes_.begin() + static_cast<std::ptrdiff_t>(offset));
+        return true;
+    }
+
+    bool read_at(std::uint64_t offset, void* data, std::size_t size,
+                 std::string& error_out) override {
+        if (offset + size > bytes_.size()) {
+            error_out = "read out of range";
+            return false;
+        }
+        auto* target = static_cast<std::uint8_t*>(data);
+        std::copy(bytes_.begin() + static_cast<std::ptrdiff_t>(offset),
+                  bytes_.begin() + static_cast<std::ptrdiff_t>(offset + size), target);
+        return true;
+    }
+
+    bool flush(std::string&) override { return true; }
+    bool dismount_volumes(std::string&) override { return true; }
+    bool remove_target(std::string& error_out) override {
+        error_out = "remove unsupported";
+        return false;
+    }
+
+    const std::vector<std::uint8_t>& bytes() const { return bytes_; }
+
+private:
+    std::string expected_path_;
+    std::vector<std::uint8_t> bytes_;
+    bool open_ = false;
+};
+
+class FaultyRawDevice final : public datascythe::IRawDevice {
+public:
+    enum class FailureMode {
+        Write,
+        Flush,
+    };
+
+    FaultyRawDevice(std::string expected_path, FailureMode mode)
+        : expected_path_(std::move(expected_path)), mode_(mode) {}
+
+    bool open(const std::string& path, std::string& error_out) override {
+        if (path != expected_path_) {
+            error_out = "unexpected path";
+            return false;
+        }
+        open_ = true;
+        return true;
+    }
+
+    void close() override { open_ = false; }
+    bool is_open() const override { return open_; }
+    datascythe::RawTargetType target_type() const override {
+        return datascythe::RawTargetType::BlockDevice;
+    }
+    std::uint64_t size_bytes(std::string&) const override { return 4096; }
+    std::uint64_t block_size(std::string&) const override { return 512; }
+
+    bool write_at(std::uint64_t, const void*, std::size_t, std::string& error_out) override {
+        if (mode_ == FailureMode::Write) {
+            error_out = "injected write failure";
+            return false;
+        }
+        return true;
+    }
+
+    bool read_at(std::uint64_t, void* data, std::size_t size, std::string&) override {
+        std::fill(static_cast<std::uint8_t*>(data), static_cast<std::uint8_t*>(data) + size, 0);
+        return true;
+    }
+
+    bool flush(std::string& error_out) override {
+        if (mode_ == FailureMode::Flush) {
+            error_out = "injected flush failure";
+            return false;
+        }
+        return true;
+    }
+
+    bool dismount_volumes(std::string&) override { return true; }
+    bool remove_target(std::string& error_out) override {
+        error_out = "remove unsupported";
+        return false;
+    }
+
+private:
+    std::string expected_path_;
+    FailureMode mode_;
+    bool open_ = false;
+};
+
+void test_erase_fails_on_write_error() {
+    auto device = std::make_unique<FaultyRawDevice>(
+        "target", FaultyRawDevice::FailureMode::Write);
+    datascythe::EraseEngine engine(std::move(device));
+    datascythe::EraseConfig config;
+    config.mode = datascythe::EraseMode::QuickZeroFill;
+
+    const auto result = engine.erase_target("target", config, nullptr);
+    expect_true(!result.success, "erase fails when write fails");
+    expect_true(result.error == datascythe::EraseError::IoError, "write failure is I/O error");
+}
+
+void test_erase_fails_on_flush_error() {
+    auto device = std::make_unique<FaultyRawDevice>(
+        "target", FaultyRawDevice::FailureMode::Flush);
+    datascythe::EraseEngine engine(std::move(device));
+    datascythe::EraseConfig config;
+    config.mode = datascythe::EraseMode::QuickZeroFill;
+
+    const auto result = engine.erase_target("target", config, nullptr);
+    expect_true(!result.success, "erase fails when flush fails");
+    expect_true(result.error == datascythe::EraseError::IoError, "flush failure is I/O error");
+}
+
+void test_drive_clone_engine_copies_and_verifies() {
+    std::vector<std::uint8_t> source_bytes(8192);
+    for (std::size_t i = 0; i < source_bytes.size(); ++i) {
+        source_bytes[i] = static_cast<std::uint8_t>(i % 251);
+    }
+    std::vector<std::uint8_t> target_bytes(source_bytes.size(), 0xA5);
+
+    auto source = std::make_unique<MemoryRawDevice>("source", source_bytes);
+    auto target = std::make_unique<MemoryRawDevice>("target", target_bytes);
+    const MemoryRawDevice* target_view = target.get();
+
+    datascythe::DriveCloneEngine engine(std::move(source), std::move(target));
+    datascythe::DriveCloneConfig config;
+    config.verify_after_clone = true;
+
+    int progress_calls = 0;
+    const auto result = engine.clone("source", "target", config,
+                                     [&](const datascythe::EraseProgress&) {
+                                         ++progress_calls;
+                                         return true;
+                                     });
+
+    expect_true(result.success, "drive clone succeeds");
+    expect_true(result.verification_passed, "drive clone verifies");
+    expect_true(target_view->bytes() == source_bytes, "target bytes match source bytes");
+    expect_true(result.source_sha256 == result.target_sha256, "clone hashes match");
+    expect_true(result.source_sha256 == datascythe::sha256_hex(source_bytes.data(), source_bytes.size()),
+                "clone source hash matches expected");
+    expect_true(progress_calls > 0, "clone reports progress");
+}
+
+void test_export_clone_report() {
+    datascythe::CloneReport report;
+    report.source.device_path = "source";
+    report.source.model = "source-model";
+    report.source.serial = "source-serial";
+    report.source.size_bytes = 4096;
+    report.target.device_path = "target";
+    report.target.model = "target-model";
+    report.target.serial = "target-serial";
+    report.target.size_bytes = 4096;
+    report.config.verify_after_clone = true;
+    report.result.success = true;
+    report.result.verification_passed = true;
+    report.result.message = "Drive clone completed and verified byte-for-byte";
+    report.result.source_sha256 =
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    report.result.target_sha256 = report.result.source_sha256;
+
+    const std::string path = "datascythe_clone_report_test.txt";
+    std::string error;
+    expect_true(datascythe::export_clone_report(report, path, error), "export clone report");
+
+    std::ifstream in(path);
+    expect_true(in.good(), "clone report readable");
+    std::string contents((std::istreambuf_iterator<char>(in)),
+                         std::istreambuf_iterator<char>());
+    expect_true(contents.find("DATASCYTHE CLONE REPORT") != std::string::npos,
+                "clone report header present");
+    expect_true(contents.find("Source SHA-256") != std::string::npos,
+                "clone report hash present");
+
+    std::remove(path.c_str());
+}
+
 void test_nvme_poll_complete() {
     bool called = false;
     const auto poll = [](datascythe::nvme::SanitizeStatusLog& log, std::string&) -> bool {
@@ -210,6 +433,7 @@ int main() {
     test_pass_scheduler_no_random();
     test_pattern_generator_fixed();
     test_pattern_generator_random();
+    test_sha256_abc();
     test_nvme_sanitize_progress();
     test_mode_to_string();
     test_build_certificate();
@@ -218,6 +442,10 @@ int main() {
     test_sanitize_target_for_filename();
     test_default_certificate_path();
     test_final_verification_pattern_logic();
+    test_erase_fails_on_write_error();
+    test_erase_fails_on_flush_error();
+    test_drive_clone_engine_copies_and_verifies();
+    test_export_clone_report();
     test_nvme_poll_complete();
 
     if (failures == 0) {
