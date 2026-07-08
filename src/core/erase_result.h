@@ -39,6 +39,8 @@ struct EraseResult {
     std::vector<std::string> warnings;
     bool verification_passed = true;
     std::size_t verification_samples = 0;
+    std::string source_sha256;
+    std::string target_sha256;
 };
 
 }  // namespace datascythe
