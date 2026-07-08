@@ -7,14 +7,18 @@
 #include "core/preflight.h"
 #include "core/verification.h"
 
+#include "platform/drive_analyzer.h"
 #include "platform/drive_enumerator.h"
 #include "platform/raw_device.h"
 #include "platform/secure_erase.h"
 
 #include <QCheckBox>
+#include <QCloseEvent>
 #include <QDateTime>
+#include <QFile>
 #include <QFileDialog>
 #include <QGroupBox>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -24,7 +28,9 @@
 #include <QSpinBox>
 #include <QTableView>
 #include <QTextEdit>
+#include <QTextStream>
 #include <QTimer>
+#include <QTabWidget>
 #include <QVBoxLayout>
 
 #include <functional>
@@ -100,6 +106,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     header->setWordWrap(true);
     root_layout->addWidget(header);
 
+    auto* tabs = new QTabWidget(this);
+
+    auto* erase_tab = new QWidget(this);
+    auto* erase_layout = new QVBoxLayout(erase_tab);
+
     model_ = new DriveTableModel(this);
     table_ = new QTableView(this);
     table_->setModel(model_);
@@ -107,7 +118,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     table_->setSelectionMode(QAbstractItemView::SingleSelection);
     table_->horizontalHeader()->setStretchLastSection(true);
     table_->setAlternatingRowColors(true);
-    root_layout->addWidget(table_, 1);
+    erase_layout->addWidget(table_, 1);
 
     auto* config_group = new QGroupBox("Erase configuration", this);
     auto* config_layout = new QHBoxLayout(config_group);
@@ -149,7 +160,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     export_cert_check_->setChecked(true);
     config_layout->addWidget(export_cert_check_);
     config_layout->addStretch();
-    root_layout->addWidget(config_group);
+    erase_layout->addWidget(config_group);
 
     auto* drive_buttons = new QHBoxLayout();
     refresh_button_ = new QPushButton("Refresh drives", this);
@@ -165,7 +176,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     drive_buttons->addWidget(volume_wipe_button_);
     drive_buttons->addWidget(ssd_erase_button_);
     drive_buttons->addWidget(cancel_button_);
-    root_layout->addLayout(drive_buttons);
+    erase_layout->addLayout(drive_buttons);
 
     auto* file_buttons = new QHBoxLayout();
     file_shred_button_ = new QPushButton("Secure erase file(s)...", this);
@@ -177,7 +188,95 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     file_buttons->addStretch();
     file_buttons->addWidget(cert_button);
     file_buttons->addWidget(export_button);
-    root_layout->addLayout(file_buttons);
+    erase_layout->addLayout(file_buttons);
+
+    tabs->addTab(erase_tab, "Erase");
+
+    auto* clone_tab = new QWidget(this);
+    auto* clone_layout = new QVBoxLayout(clone_tab);
+
+    auto* clone_notice = new QLabel(
+        "Clone copies every OS-addressable byte from the selected source drive to the selected "
+        "target drive. The target will be overwritten.",
+        this);
+    clone_notice->setWordWrap(true);
+    clone_layout->addWidget(clone_notice);
+
+    auto* clone_grid = new QGridLayout();
+    clone_grid->addWidget(new QLabel("<b>Source drive</b>", this), 0, 0);
+    clone_grid->addWidget(new QLabel("<b>Target drive</b>", this), 0, 1);
+
+    clone_source_model_ = new DriveTableModel(this);
+    clone_source_table_ = new QTableView(this);
+    clone_source_table_->setModel(clone_source_model_);
+    clone_source_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    clone_source_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    clone_source_table_->horizontalHeader()->setStretchLastSection(true);
+    clone_source_table_->setAlternatingRowColors(true);
+    clone_grid->addWidget(clone_source_table_, 1, 0);
+
+    clone_target_model_ = new DriveTableModel(this);
+    clone_target_table_ = new QTableView(this);
+    clone_target_table_->setModel(clone_target_model_);
+    clone_target_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    clone_target_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    clone_target_table_->horizontalHeader()->setStretchLastSection(true);
+    clone_target_table_->setAlternatingRowColors(true);
+    clone_grid->addWidget(clone_target_table_, 1, 1);
+    clone_layout->addLayout(clone_grid, 1);
+
+    auto* clone_controls = new QHBoxLayout();
+    clone_verify_check_ = new QCheckBox("Verify byte-for-byte after clone", this);
+    clone_verify_check_->setChecked(true);
+    clone_button_ = new QPushButton("Clone source to target", this);
+    clone_cancel_button_ = new QPushButton("Cancel", this);
+    clone_cancel_button_->setEnabled(false);
+    clone_report_button_ = new QPushButton("Export clone report", this);
+    clone_report_button_->setEnabled(false);
+    clone_controls->addWidget(clone_verify_check_);
+    clone_controls->addStretch();
+    clone_controls->addWidget(clone_report_button_);
+    clone_controls->addWidget(clone_button_);
+    clone_controls->addWidget(clone_cancel_button_);
+    clone_layout->addLayout(clone_controls);
+
+    tabs->addTab(clone_tab, "Drive clone");
+
+    auto* analytics_tab = new QWidget(this);
+    auto* analytics_layout = new QVBoxLayout(analytics_tab);
+    auto* analytics_notice = new QLabel(
+        "Select a drive to inspect identity, media classification, geometry, cache, TRIM, "
+        "alignment, volume, and platform health-related properties.",
+        this);
+    analytics_notice->setWordWrap(true);
+    analytics_layout->addWidget(analytics_notice);
+
+    analytics_model_ = new DriveTableModel(this);
+    analytics_table_ = new QTableView(this);
+    analytics_table_->setModel(analytics_model_);
+    analytics_table_->setSelectionBehavior(QAbstractItemView::SelectRows);
+    analytics_table_->setSelectionMode(QAbstractItemView::SingleSelection);
+    analytics_table_->horizontalHeader()->setStretchLastSection(true);
+    analytics_table_->setAlternatingRowColors(true);
+    analytics_layout->addWidget(analytics_table_, 1);
+
+    auto* analytics_controls = new QHBoxLayout();
+    analytics_button_ = new QPushButton("Analyze selected drive", this);
+    analytics_export_button_ = new QPushButton("Export analytics report", this);
+    analytics_export_button_->setEnabled(false);
+    analytics_controls->addStretch();
+    analytics_controls->addWidget(analytics_export_button_);
+    analytics_controls->addWidget(analytics_button_);
+    analytics_layout->addLayout(analytics_controls);
+
+    analytics_view_ = new QTextEdit(this);
+    analytics_view_->setReadOnly(true);
+    analytics_view_->setMinimumHeight(220);
+    analytics_view_->setPlaceholderText("Drive analytics will appear here.");
+    analytics_layout->addWidget(analytics_view_, 1);
+
+    tabs->addTab(analytics_tab, "Analytics");
+    root_layout->addWidget(tabs, 1);
 
     status_label_ = new QLabel("Ready", this);
     progress_bar_ = new QProgressBar(this);
@@ -199,6 +298,11 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     connect(volume_wipe_button_, &QPushButton::clicked, this,
             [this]() { start_drive_operation(EraseMode::ShredVolume); });
     connect(ssd_erase_button_, &QPushButton::clicked, this, &MainWindow::ssd_secure_erase);
+    connect(clone_button_, &QPushButton::clicked, this, &MainWindow::start_clone_operation);
+    connect(clone_cancel_button_, &QPushButton::clicked, this, &MainWindow::cancel_operation);
+    connect(clone_report_button_, &QPushButton::clicked, this, &MainWindow::export_last_clone_report);
+    connect(analytics_button_, &QPushButton::clicked, this, &MainWindow::analyze_selected_drive);
+    connect(analytics_export_button_, &QPushButton::clicked, this, &MainWindow::export_analytics_report);
     connect(cancel_button_, &QPushButton::clicked, this, &MainWindow::cancel_operation);
     connect(file_shred_button_, &QPushButton::clicked, this, &MainWindow::shred_files);
     connect(folder_shred_button_, &QPushButton::clicked, this, &MainWindow::shred_folder);
@@ -210,6 +314,17 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     }
 
     refresh_drives();
+}
+
+void MainWindow::closeEvent(QCloseEvent* event) {
+    if (operation_running_.load()) {
+        QMessageBox::warning(this, "Operation running",
+                             "An erase or clone operation is still running. Cancel it and wait for "
+                             "the operation to stop before closing DataScythe.");
+        event->ignore();
+        return;
+    }
+    QMainWindow::closeEvent(event);
 }
 
 bool MainWindow::ensure_admin_privileges() {
@@ -275,6 +390,9 @@ void MainWindow::refresh_drives() {
 
     drives_ = enumerator->enumerate(error);
     model_->set_drives(drives_);
+    clone_source_model_->set_drives(drives_);
+    clone_target_model_->set_drives(drives_);
+    analytics_model_->set_drives(drives_);
 
     if (!error.empty()) {
         append_log_line(QString::fromStdString(error));
@@ -352,6 +470,66 @@ bool MainWindow::confirm_path_operation(const QString& path, const QString& phra
 
     const auto answer = QMessageBox::critical(
         this, "Final confirmation", "Last chance: permanently shred\n" + path + "?",
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    return answer == QMessageBox::Yes;
+}
+
+bool MainWindow::confirm_clone_operation(const DriveInfo& source, const DriveInfo& target) {
+    if (source.device_path == target.device_path || source.physical_index == target.physical_index) {
+        QMessageBox::critical(this, "Invalid clone target",
+                              "Source and target drives must be different physical drives.");
+        return false;
+    }
+
+    if (target.is_system_drive) {
+        QMessageBox::critical(this, "Blocked",
+                              "Cloning to the system drive is blocked to prevent destroying your "
+                              "current operating system.");
+        return false;
+    }
+
+    if (target.is_read_only) {
+        QMessageBox::critical(this, "Blocked", "The selected target drive is read-only.");
+        return false;
+    }
+
+    if (target.size_bytes < source.size_bytes) {
+        QMessageBox::critical(this, "Target too small",
+                              "The target drive must be at least as large as the source drive.");
+        return false;
+    }
+
+    QString description =
+        "Copies every OS-addressable byte from\n" +
+        QString::fromStdString(source.device_path) +
+        "\nto\n" + QString::fromStdString(target.device_path) +
+        "\n\nAll existing data on the target drive will be overwritten.";
+    if (target.size_bytes > source.size_bytes) {
+        description +=
+            "\n\nThe target is larger than the source; bytes beyond the source size will be left "
+            "unchanged.";
+    }
+    if (source.is_system_drive) {
+        description +=
+            "\n\nThe source appears to be the running system drive. A live clone may not be "
+            "forensically stable if the operating system writes to it during the copy.";
+    }
+
+    const QString target_label =
+        QString::fromStdString(target.device_path) +
+        QString("\nModel: %1\nSerial: %2")
+            .arg(QString::fromStdString(target.model.empty() ? "N/A" : target.model))
+            .arg(QString::fromStdString(target.serial.empty() ? "N/A" : target.serial));
+    ConfirmationDialog dialog(target_label, QString("CLONE %1").arg(target.physical_index),
+                              "Drive clone", description, this);
+    if (dialog.exec() != QDialog::Accepted || !dialog.confirmed()) {
+        return false;
+    }
+
+    const auto answer = QMessageBox::critical(
+        this, "Final confirmation",
+        "Last chance: overwrite " + QString::fromStdString(target.device_path) +
+            " with a byte-for-byte clone of " + QString::fromStdString(source.device_path) + "?",
         QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     return answer == QMessageBox::Yes;
 }
@@ -455,15 +633,96 @@ void MainWindow::run_erase_job(
     }).detach();
 }
 
+void MainWindow::run_clone_job(const DriveInfo& source, const DriveInfo& target,
+                               const DriveCloneConfig& config) {
+    auto engine = std::make_shared<DriveCloneEngine>(create_raw_device(), create_raw_device());
+    engine->set_logger(&logger_);
+
+    {
+        std::lock_guard<std::mutex> lock(job_mutex_);
+        active_clone_engine_ = engine;
+        operation_running_.store(true);
+    }
+
+    cancel_requested_.store(false);
+    set_busy(true);
+    progress_bar_->setValue(0);
+
+    const std::string source_path = source.device_path;
+    const std::string target_path = target.device_path;
+    logger_.info("Starting drive clone " + source_path + " -> " + target_path);
+    status_label_->setText("Cloning " + QString::fromStdString(source_path) + " to " +
+                           QString::fromStdString(target_path) + "...");
+
+    auto progress_callback = [this](const EraseProgress& progress) -> bool {
+        QTimer::singleShot(0, this, [this, progress]() { update_progress_ui(progress); });
+        return !cancel_requested_.load();
+    };
+
+    std::thread([this, engine, source, target, source_path, target_path, config, progress_callback]() {
+        const EraseResult result =
+            engine->clone(source_path, target_path, config, progress_callback);
+
+        QTimer::singleShot(0, this, [this, source, target, config, result]() {
+            {
+                std::lock_guard<std::mutex> lock(job_mutex_);
+                active_clone_engine_.reset();
+                operation_running_.store(false);
+            }
+
+            last_clone_report_.source = source;
+            last_clone_report_.target = target;
+            last_clone_report_.config = config;
+            last_clone_report_.result = result;
+            last_clone_report_.log_excerpt.clear();
+            const auto& entries = logger_.entries();
+            const std::size_t max_lines = 80;
+            const std::size_t start =
+                entries.size() > max_lines ? entries.size() - max_lines : 0;
+            for (std::size_t i = start; i < entries.size(); ++i) {
+                last_clone_report_.log_excerpt.push_back(entries[i]);
+            }
+            has_clone_report_ = true;
+            clone_report_button_->setEnabled(true);
+
+            if (result.success) {
+                append_log_line(QString::fromStdString(result.message));
+                status_label_->setText("Clone completed successfully");
+                progress_bar_->setValue(100);
+                QMessageBox::information(this, "Clone complete",
+                                         QString::fromStdString(result.message));
+            } else {
+                append_log_line("ERROR: " + QString::fromStdString(result.message));
+                status_label_->setText(result.error == EraseError::Cancelled ? "Cancelled"
+                                                                             : "Clone failed");
+                if (result.error != EraseError::Cancelled) {
+                    QMessageBox::critical(this, "Clone failed",
+                                          QString::fromStdString(result.message));
+                }
+            }
+            for (const auto& warning : result.warnings) {
+                append_log_line("WARN: " + QString::fromStdString(warning));
+            }
+            set_busy(false);
+            refresh_drives();
+        });
+    }).detach();
+}
+
 void MainWindow::cancel_operation() {
     cancel_requested_.store(true);
     std::shared_ptr<EraseEngine> engine;
+    std::shared_ptr<DriveCloneEngine> clone_engine;
     {
         std::lock_guard<std::mutex> lock(job_mutex_);
         engine = active_engine_;
+        clone_engine = active_clone_engine_;
     }
     if (engine) {
         engine->request_cancel();
+    }
+    if (clone_engine) {
+        clone_engine->request_cancel();
     }
     append_log_line("Cancellation requested...");
     status_label_->setText("Cancelling...");
@@ -507,6 +766,92 @@ void MainWindow::start_drive_operation(EraseMode mode) {
                   [target_path, config, progress_callback](std::shared_ptr<EraseEngine>& engine) {
                       return engine->erase_target(target_path, config, progress_callback);
                   });
+}
+
+void MainWindow::start_clone_operation() {
+    const auto source_selected = clone_source_table_->selectionModel()->selectedRows();
+    const auto target_selected = clone_target_table_->selectionModel()->selectedRows();
+    if (source_selected.isEmpty() || target_selected.isEmpty()) {
+        QMessageBox::information(this, "Select drives",
+                                 "Select one source drive and one target drive first.");
+        return;
+    }
+
+    const DriveInfo* source = clone_source_model_->drive_at(source_selected.first().row());
+    const DriveInfo* target = clone_target_model_->drive_at(target_selected.first().row());
+    if (!source || !target) {
+        return;
+    }
+
+    if (!ensure_admin_privileges()) {
+        QMessageBox::critical(this, "Administrator privileges required",
+                              "Drive cloning requires Administrator privileges for raw device "
+                              "access.");
+        return;
+    }
+
+    if (!confirm_clone_operation(*source, *target)) {
+        return;
+    }
+
+    DriveCloneConfig config;
+    config.verify_after_clone = clone_verify_check_->isChecked();
+    run_clone_job(*source, *target, config);
+}
+
+void MainWindow::analyze_selected_drive() {
+    const auto selected = analytics_table_->selectionModel()->selectedRows();
+    if (selected.isEmpty()) {
+        QMessageBox::information(this, "Select a drive", "Select a drive from the analytics table first.");
+        return;
+    }
+
+    const DriveInfo* drive = analytics_model_->drive_at(selected.first().row());
+    if (!drive) {
+        return;
+    }
+
+    auto analyzer = create_drive_analyzer();
+    if (!analyzer) {
+        QMessageBox::critical(this, "Unavailable",
+                              "Drive analytics are not available on this platform.");
+        return;
+    }
+
+    const DriveAnalysis analysis = analyzer->analyze(*drive);
+
+    QString report;
+    report += "Drive Analytics\n";
+    report += "===============\n\n";
+    report += "Health summary: " + QString::fromStdString(analysis.health_summary) + "\n";
+    report += "SSD / non-rotational: " + QString(analysis.is_ssd ? "Yes" : "No") + "\n\n";
+
+    if (!analysis.warnings.empty()) {
+        report += "Warnings\n";
+        report += "--------\n";
+        for (const auto& warning : analysis.warnings) {
+            report += "- " + QString::fromStdString(warning) + "\n";
+        }
+        report += "\n";
+    }
+
+    std::string current_category;
+    for (const auto& field : analysis.fields) {
+        if (field.category != current_category) {
+            if (!current_category.empty()) {
+                report += "\n";
+            }
+            current_category = field.category;
+            report += QString::fromStdString(current_category) + "\n";
+            report += QString(current_category.size(), '-') + "\n";
+        }
+        report += QString::fromStdString(field.name) + ": " +
+                  QString::fromStdString(field.value) + "\n";
+    }
+
+    analytics_view_->setPlainText(report);
+    analytics_export_button_->setEnabled(true);
+    append_log_line("Analyzed drive " + QString::fromStdString(drive->device_path));
 }
 
 void MainWindow::shred_files() {
@@ -683,6 +1028,54 @@ void MainWindow::export_last_certificate() {
     append_log_line("Certificate exported to " + path);
 }
 
+void MainWindow::export_last_clone_report() {
+    if (!has_clone_report_) {
+        QMessageBox::information(this, "No clone report",
+                                 "No clone report is available yet. Run a clone first.");
+        return;
+    }
+
+    const QString default_name = QString::fromStdString(default_clone_report_path(
+        last_clone_report_.source.device_path, last_clone_report_.target.device_path));
+    const QString path = QFileDialog::getSaveFileName(this, "Save clone report", default_name,
+                                                      "Text files (*.txt)");
+    if (path.isEmpty()) {
+        return;
+    }
+
+    std::string error;
+    if (!export_clone_report(last_clone_report_, path.toStdString(), error)) {
+        QMessageBox::critical(this, "Clone report export failed", QString::fromStdString(error));
+        return;
+    }
+    append_log_line("Clone report exported to " + path);
+}
+
+void MainWindow::export_analytics_report() {
+    const QString text = analytics_view_->toPlainText();
+    if (text.trimmed().isEmpty()) {
+        QMessageBox::information(this, "No analytics report",
+                                 "No analytics report is available yet. Analyze a drive first.");
+        return;
+    }
+
+    const QString path = QFileDialog::getSaveFileName(
+        this, "Save analytics report", "datascythe-analytics-report.txt", "Text files (*.txt)");
+    if (path.isEmpty()) {
+        return;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        QMessageBox::critical(this, "Analytics export failed",
+                              "Unable to write analytics report to " + path);
+        return;
+    }
+    QTextStream out(&file);
+    out << text;
+    append_log_line("Analytics report exported to " + path);
+}
+
 void MainWindow::export_log() {
     const QString path =
         QFileDialog::getSaveFileName(this, "Export log", "datascythe-log.txt", "Text files (*.txt)");
@@ -710,7 +1103,12 @@ void MainWindow::set_busy(bool busy) {
     file_shred_button_->setEnabled(!busy);
     folder_shred_button_->setEnabled(!busy);
     ssd_erase_button_->setEnabled(!busy);
+    clone_button_->setEnabled(!busy);
+    clone_report_button_->setEnabled(!busy && has_clone_report_);
+    analytics_button_->setEnabled(!busy);
+    analytics_export_button_->setEnabled(!busy && !analytics_view_->toPlainText().trimmed().isEmpty());
     cancel_button_->setEnabled(busy);
+    clone_cancel_button_->setEnabled(busy);
 }
 
 }  // namespace datascythe::gui
