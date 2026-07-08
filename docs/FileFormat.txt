@@ -23,6 +23,8 @@ This document specifies every structured file format produced or consumed by
 DataScythe v0.1.0 for operator-visible artifacts:
 
   - Erasure certificate text files
+  - Drive clone evidence report text files
+  - Exported analytics report text files
   - Exported session log text files
   - CLI stderr progress lines (ephemeral, not saved by default)
 
@@ -40,8 +42,14 @@ v0.1.0 writes these file types:
   datascythe-certificate-<target>-<timestamp>.txt
       Human-readable erasure certificate (auto-save or --certificate export)
 
+  datascythe-clone-report-<source>-to-<target>-<timestamp>.txt
+      Human-readable drive clone evidence report
+
   datascythe-log.txt (operator-chosen name)
       Exported session log via GUI Export log
+
+  datascythe-analytics-report.txt (operator-chosen name)
+      Exported GUI Analytics tab report
 
   datascythe_test_cert.txt
       Ephemeral filename used by unit tests only; not part of release artifacts
@@ -92,7 +100,44 @@ Hex in documentation:
 Newlines:
 
   Certificate and log producers terminate each line with LF, byte 0x0a.
-  The certificate banner lines use 60 equals signs between LF boundaries.
+The certificate banner lines use 60 equals signs between LF boundaries.
+
+
+Drive Clone Report
+------------------
+
+Producer functions:
+
+  export_clone_report() serializes CloneReport to disk
+
+Default filename:
+
+  datascythe-clone-report-<source>-to-<target>-<YYYYMMDD-HHMMSS>.txt
+
+The report includes:
+
+  - Generated timestamp
+  - Success/failure status and result message
+  - Verification requested and verification result
+  - Source SHA-256 for bytes read during copy
+  - Target SHA-256 for bytes read during verification, or N/A when unavailable
+  - Source and target device identity fields
+  - Warnings
+  - Clone limitations
+  - Recent log excerpt
+
+The banner text is:
+
+  DATASCYTHE CLONE REPORT
+
+
+Analytics Report
+----------------
+
+The GUI Analytics tab exports exactly the displayed QTextEdit report as UTF-8
+text. The report is operator-visible text, not a stable machine-readable schema.
+It may contain hardware serial numbers, firmware revisions, volume paths, cache
+policy, and health-related storage properties.
 
 
 Erasure Certificate
