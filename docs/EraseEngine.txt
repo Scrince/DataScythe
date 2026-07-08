@@ -8,6 +8,10 @@ This is the normative erase-engine specification for the promoted production
 DataScythe v0.1.0 native build. The authoritative implementation is
 src/core/erase_engine.cpp with platform I/O injected through IRawDevice.
 
+Current unreleased source builds also include src/core/drive_clone_engine.cpp
+for GUI byte-for-byte physical drive cloning. It reuses IRawDevice but does not
+perform erase pass scheduling.
+
 Hardware secure erase (SSD) is implemented in platform/windows/secure_erase.cpp
 and dispatches through ISecureErase rather than EraseEngine overwrite passes.
 NVMe admin command packing is specified in src/platform/nvme_admin.h.
@@ -258,6 +262,42 @@ erase_paths:
   remove_after_shred calls device.remove_target after successful shred
 
 Empty collection returns InvalidTarget "No files found to shred".
+
+
+Drive Clone Engine
+------------------
+
+DriveCloneEngine copies bytes between two raw device handles:
+
+  clone(source_path, target_path, config)
+       |
+       +-- reject same source/target path
+       +-- open source and target
+       +-- source_size = source.size_bytes()
+       +-- target_size = target.size_bytes()
+       +-- reject target_size < source_size
+       +-- dismount target volumes (best effort)
+       +-- copy_bytes(0 .. source_size - 1)
+       +-- target.flush()
+       +-- optional verify_bytes(0 .. source_size - 1)
+       v
+     EraseResult
+
+DriveCloneEngine::kBufferSize = 4194304 (4 MiB)
+
+copy_bytes reads each source chunk and writes it to the same target offset.
+verify_bytes reads both devices back and compares every copied byte with memcmp.
+
+If target_size > source_size, the engine warns that bytes beyond source_size are
+left unchanged.
+
+Progress labels:
+
+  "clone"   pass 1/1 or 1/2
+  "verify" pass 2/2 when verification is enabled
+
+Cancellation checks occur between chunks. Cancelled clone targets are partial
+copies and may not contain a consistent partition or filesystem state.
 
 
 SSD Hardware Secure Erase (Windows)
