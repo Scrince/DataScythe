@@ -6,8 +6,8 @@ Release Boundary
 
 This document specifies operational security requirements for DataScythe v0.1.0.
 It is tied to the actual implementation: drive enumeration, destructive erase,
-certificate export, log export, CLI --yes bypass, and release signature
-verification.
+drive analytics, certificate export, log export, CLI --yes bypass, and release
+signature verification.
 
 Version 0.1.0 does not implement secure memory locking, kernel driver
 attestation, or anti-forensics guarantees beyond overwrite and optional
@@ -71,6 +71,11 @@ In scope:
   Exported artifact mishandling:
       Certificates and logs stored on synced folders or shared drives leak
       operational metadata.
+
+  Analytics metadata exposure:
+      Drive analytics reports may reveal serial numbers, device topology,
+      firmware revisions, cache policy, volume layout, and health-related
+      properties.
 
   Script automation error:
       --yes removes CLI confirmation. A typo in a script path is immediately
@@ -185,6 +190,11 @@ Certificates contain:
   Log excerpt lines
 
 Logs contain timestamps and operational messages.
+
+Analytics reports contain hardware identifiers and platform storage properties.
+Even when not exported by DataScythe directly, screenshots, copied text, or
+incident tickets containing analytics output should be handled as sensitive
+asset inventory records.
 
 Storage rules:
 
