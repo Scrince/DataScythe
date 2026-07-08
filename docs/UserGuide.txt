@@ -27,9 +27,11 @@ LinuxRelease.txt for Linux-specific notes.
 Version 0.1.0 implements GNU shred-inspired pass scheduling, partition metadata
 wipe, NTFS alternate data stream shredding, post-erase verification, erasure
 certificates, pre-flight checks, typed GUI confirmation, and SSD hardware secure
-erase (NVMe Sanitize and ATA SECURITY ERASE on Windows). See EraseEngine.txt,
-PassScheduling.txt, FileFormat.txt, and Confirmation.txt for byte-level
-internals.
+erase (NVMe Sanitize and ATA SECURITY ERASE on Windows). Current unreleased
+source builds also include a Qt GUI drive clone tab for byte-for-byte physical
+drive copies and an Analytics tab for selected-drive inspection. See
+EraseEngine.txt, PassScheduling.txt, FileFormat.txt, and Confirmation.txt for
+byte-level internals.
 
 
 Source of Truth
@@ -41,6 +43,7 @@ backends in platform/ and application entry points in apps/.
 Authoritative implementation files:
 
   src/core/erase_engine.cpp       Overwrite pipeline, verification, progress
+  src/core/drive_clone_engine.cpp Byte-for-byte physical drive clone pipeline
   src/core/pass_scheduler.cpp     GNU shred-style pass schedule builder
   src/core/pattern_generator.cpp  Fixed and random overwrite buffers
   src/core/partition_table.cpp    MBR/GPT metadata region wipe
@@ -48,6 +51,7 @@ Authoritative implementation files:
   src/core/verification.cpp       Post-erase sample reads
   apps/cli/main.cpp               CLI argument parsing and dispatch
   apps/gui/main_window.cpp        Qt GUI workflow and confirmation gates
+  src/platform/drive_analyzer.h   Drive analytics interface and data model
   platform/windows/               Windows drive enumeration, raw I/O, secure erase
 
 The reference GNU coreutils shred implementation is preserved at
@@ -101,6 +105,7 @@ storage outside OS visibility.
 
 Supported operation modes:
 
+  DriveClone         GUI byte-for-byte copy from source physical drive to target
   FullDeviceWipe     Overwrite every OS-addressable byte on a physical device
   QuickZeroFill      Single all-zero pass across a physical device
   ShredVolume        Shred-style overwrite of a mounted volume path
@@ -124,10 +129,14 @@ Windows because IOCTL queries fail; always run drive-level operations elevated.
 Initial GUI State
 -----------------
 
-On launch, the main window displays:
+On launch, the main window displays an Erase tab, a Drive clone tab, and an
+Analytics tab:
 
   Title:     DataScythe - Secure Drive Eraser
   Header:    Administrator privileges are required for raw device access.
+
+Erase tab:
+
   Drive table: empty until Refresh drives is clicked
   Passes spin box: 3 (range 1..100)
   Random passes: checked
@@ -139,7 +148,7 @@ On launch, the main window displays:
   Shred NTFS ADS: checked
   Auto-save certificate: checked
 
-Action buttons:
+Erase action buttons:
 
   Refresh drives
   Full-device wipe
@@ -151,6 +160,23 @@ Action buttons:
   Cancel (enabled only during an active job)
   Export certificate
   Export log
+
+Drive clone tab:
+
+  Source drive table: populated by Refresh drives
+  Target drive table: populated by Refresh drives
+  Verify byte-for-byte after clone: checked
+  Export clone report
+  Clone source to target
+  Cancel (enabled only during an active job)
+
+Analytics tab:
+
+  Drive table: populated by Refresh drives
+  Analyze selected drive
+  Export analytics report
+  Read-only report panel for identity, classification, capacity, volumes,
+  geometry, alignment, cache, TRIM/discard, and health-related platform data
 
 Progress bar and status label remain at 0% / Ready until an operation starts.
 
@@ -182,6 +208,53 @@ CLI output format per drive:
 The physical_index field in drive metadata is the N used in the GUI confirmation
 phrase ERASE N. It is not necessarily the same integer Windows Disk Management
 displays; always match on device_path and model serial before confirming.
+
+
+Drive Analytics
+---------------
+
+The Analytics tab inspects the selected drive without starting an erase or
+clone operation.
+
+Procedure (GUI):
+
+  1. Run DataScythe.exe as Administrator on Windows for the richest raw-device
+     property access.
+  2. Click Refresh drives.
+  3. Open the Analytics tab.
+  4. Select a drive row.
+  5. Click Analyze selected drive.
+  6. Review the report panel.
+
+Windows source builds query generic storage properties through DeviceIoControl,
+including:
+
+  - Device path, physical index, model, vendor, serial, and firmware revision
+  - Enumerated type and SSD/non-rotational classification
+  - System/removable/read-only flags
+  - Mounted volume paths, filesystems, sizes, and system-volume flags
+  - Bus type, removable media flag, and command queueing
+  - Disk geometry and media type
+  - Adapter transfer limits and bus version
+  - Logical/physical sector sizes and alignment offsets
+  - Seek penalty, which helps distinguish rotational from non-rotational media
+  - TRIM/UNMAP support
+  - Write cache type, enabled state, changeability, flush support, and
+    write-through support
+
+Linux source builds read available /sys/block properties such as rotational,
+removable, read-only, logical/physical block size, discard settings, scheduler,
+write cache, model, vendor, serial, and firmware revision.
+
+macOS source builds include baseline DriveInfo fields and diskutil info when
+available.
+
+Health summary is conservative. Generic OS storage properties can identify many
+SSD/HDD and media behavior traits, but vendor SMART attributes, NVMe SMART /
+health log counters, lifetime writes, temperature, spare percentage, and error
+logs may require vendor-specific commands or external tools such as smartctl or
+nvme-cli. When those counters are not exposed through the generic analyzer, the
+report says so rather than inventing a health verdict.
 
 
 Erase Configuration Defaults
@@ -240,6 +313,14 @@ GUI drive operations require:
   1. Typed phrase ERASE <physical_index> in the confirmation dialog.
   2. A final Yes/No dialog: "Last chance: permanently erase <device_path>?"
 
+GUI drive clone operations require:
+
+  1. Source and target drive rows selected in the Drive clone tab.
+  2. Target is not the detected system drive, is not read-only, differs from
+     source, and is at least as large as source.
+  3. Typed phrase CLONE <target physical_index>.
+  4. A final Yes/No dialog confirming overwrite of the target with the source.
+
 GUI file operations require:
 
   1. Typed phrase SHRED FILES.
@@ -253,6 +334,9 @@ GUI folder operations require:
 CLI operations require:
 
   Interactive stdin line exactly equal to YES (case-sensitive) unless --yes.
+
+The drive clone workflow is GUI-only in current source builds; the CLI has no
+clone mode.
 
 See Confirmation.txt for normative phrase definitions and acceptance rules.
 
@@ -312,6 +396,48 @@ CLI:
 
 The CLI resolves \\.\PhysicalDriveN to the first volume mount point when mode
 is volume.
+
+
+Drive Clone
+-----------
+
+Copies every OS-addressable byte from a selected source physical drive to a
+selected target physical drive. This is intended for forensic imaging workflows
+and full operating-system disk migration when the target is at least as large
+as the source.
+
+Pipeline:
+
+  1. Operator selects one source drive and one target drive.
+  2. Target safety checks reject same-drive, system-drive, read-only, and
+     undersized targets.
+  3. Typed clone confirmation and final Yes/No confirmation.
+  4. Source and target raw devices are opened.
+  5. Target volumes are dismounted best-effort.
+  6. Bytes 0 .. source_size-1 are read from source and written to target.
+  7. Target is flushed.
+  8. Optional full byte-for-byte verification reads source and target back and
+     compares every copied byte.
+  9. SHA-256 hashes are recorded for the copied source stream and, when
+     verification is enabled, the verified target stream.
+
+GUI: open the Drive clone tab, select a source row, select a target row, leave
+Verify byte-for-byte after clone checked for forensic use, then click Clone
+source to target.
+
+If the target is larger than the source, bytes beyond source_size are left
+unchanged. Wipe or repartition the remainder separately if policy requires a
+fully defined target state.
+
+Cloning a live system drive as the source is allowed but may not be
+forensically stable because the running operating system can write to the
+source during the copy. For evidence acquisition, use a powered-off source or a
+trusted write-blocked environment whenever possible.
+
+After a clone completes, click Export clone report to save a text report with
+source and target identity, verification status, SHA-256 hashes, warnings, and
+recent log lines. When verification is disabled, target SHA-256 is not available
+because the target is not read back.
 
 
 SSD Hardware Secure Erase
@@ -401,6 +527,10 @@ was skipped. verification_passed is set true in that case.
 SSD hardware secure erase uses verify_target_zeroed, which expects zero bytes
 at sample offsets. This may not reflect crypto-erase semantics.
 
+Drive clone verification is different from erase verification: when Verify
+byte-for-byte after clone is checked, the clone engine performs a full read
+compare of every copied byte from source and target.
+
 See EraseEngine.txt and Limitations.txt.
 
 
@@ -436,6 +566,14 @@ Levels: INFO, WARN, ERROR.
 
 Log lines are not signed. Treat exported logs as operational records, not
 tamper-evident proof.
+
+
+Analytics Report Export
+-----------------------
+
+After analyzing a drive in the Analytics tab, click Export analytics report to
+save the displayed report text. Analytics reports contain hardware identifiers
+such as serial numbers and should be handled as sensitive asset inventory.
 
 
 CLI Reference
@@ -499,11 +637,13 @@ Operational Safety Rules
 
   1. Verify docs/SHA256SUMS and PGP signatures before running a release build.
   2. Match physical drive index, model, and serial before confirming.
-  3. Never erase the system drive.
+  3. Never erase or clone onto the system drive.
   4. Disconnect or accept dismount of mounted volumes on whole-device operations.
   5. Store certificates and logs only on controlled media.
   6. Assume SSD wear-leveling, HPA/DCO, and firmware regions may retain data.
   7. Assume a compromised host can observe paths, filenames, and timing.
+  8. For forensic clone source drives, prefer powered-off acquisition or a
+     trusted write-blocked environment over live-system cloning.
 
 See OpSec.txt and Limitations.txt for the full operational security model.
 
