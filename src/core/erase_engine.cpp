@@ -69,7 +69,7 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
         auto files = PathCollector::collect_files(path, config.recursive,
                                                   config.shred_alternate_data_streams,
                                                   collect_error);
-        if (!collect_error.empty() && files.empty()) {
+        if (!collect_error.empty()) {
             aggregate.success = false;
             aggregate.error = EraseError::InvalidTarget;
             aggregate.message = collect_error;
@@ -113,6 +113,9 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
                                "ShredFiles passes=" + std::to_string(config.pass_count));
     }
 
+    std::size_t failed_targets = 0;
+    std::size_t shredded_targets = 0;
+
     for (const auto& file : all_files) {
         if (cancel_requested_.load()) {
             aggregate.success = false;
@@ -127,18 +130,32 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
         std::string error;
         if (!device_->open(file, error)) {
             aggregate.warnings.push_back("Skipped: " + file + " - " + error);
+            ++failed_targets;
             continue;
         }
 
         const std::uint64_t size = effective_size(*device_, work_config, error);
         if (size == 0) {
+            if (config.remove_after_shred) {
+                if (!device_->remove_target(error)) {
+                    aggregate.warnings.push_back("Failed to remove zero-size file " + file +
+                                                 ": " + error);
+                    ++failed_targets;
+                } else if (logger_) {
+                    logger_->info("Removed zero-size file " + file);
+                }
+            } else {
+                aggregate.warnings.push_back("Skipped overwrite for zero-size file: " + file);
+            }
             device_->close();
-            aggregate.warnings.push_back("Skipped (zero size): " + file);
+            ++shredded_targets;
             continue;
         }
 
         auto file_result =
             erase_single_open_target(file, work_config, size, op, progress);
+        aggregate.warnings.insert(aggregate.warnings.end(), file_result.warnings.begin(),
+                                  file_result.warnings.end());
         if (!file_result.success) {
             aggregate.success = false;
             aggregate.error = file_result.error;
@@ -150,18 +167,24 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
         if (config.remove_after_shred) {
             if (!device_->remove_target(error)) {
                 aggregate.warnings.push_back("Failed to remove " + file + ": " + error);
+                ++failed_targets;
             } else if (logger_) {
                 logger_->info("Removed " + file);
             }
         }
 
         device_->close();
-        aggregate.warnings.insert(aggregate.warnings.end(), file_result.warnings.begin(),
-                                  file_result.warnings.end());
+        ++shredded_targets;
     }
 
-    if (aggregate.success) {
-        aggregate.message = "Shredded " + std::to_string(all_files.size()) + " file(s)";
+    if (aggregate.success && failed_targets > 0) {
+        aggregate.success = false;
+        aggregate.error = EraseError::IoError;
+        aggregate.message = "Shred incomplete: " + std::to_string(failed_targets) +
+                            " of " + std::to_string(all_files.size()) +
+                            " file(s) failed or were skipped";
+    } else if (aggregate.success) {
+        aggregate.message = "Shredded " + std::to_string(shredded_targets) + " file(s)";
     }
 
     if (logger_) {
@@ -514,21 +537,14 @@ bool EraseEngine::write_full_pass(int pattern_type, std::uint64_t total_size,
 
         std::string error;
         if (!device_->write_at(offset, buffer.data(), chunk, error)) {
-            result.warnings.push_back("Write warning at offset " + std::to_string(offset) +
-                                      ": " + error);
+            result.success = false;
+            result.error = EraseError::IoError;
+            result.message = "Write failed at offset " + std::to_string(offset) + ": " + error;
+            result.warnings.push_back(result.message);
             if (logger_) {
                 logger_->warning(result.warnings.back());
             }
-
-            const std::uint64_t aligned = ((offset / kSectorSize) + 1) * kSectorSize;
-            if (aligned <= offset) {
-                result.success = false;
-                result.error = EraseError::IoError;
-                result.message = "Unrecoverable I/O error at offset " + std::to_string(offset);
-                return false;
-            }
-            offset = std::min(aligned, total_size);
-            continue;
+            return false;
         }
 
         offset += chunk;
@@ -552,10 +568,14 @@ bool EraseEngine::write_full_pass(int pattern_type, std::uint64_t total_size,
 
     std::string flush_error;
     if (!device_->flush(flush_error)) {
-        result.warnings.push_back("Flush warning: " + flush_error);
+        result.success = false;
+        result.error = EraseError::IoError;
+        result.message = "Flush failed: " + flush_error;
+        result.warnings.push_back(result.message);
         if (logger_) {
             logger_->warning(result.warnings.back());
         }
+        return false;
     }
 
     return true;
