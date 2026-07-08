@@ -1,8 +1,11 @@
 # DataScythe
 
 DataScythe is a native secure data erasure utility for physical drives, mounted
-volumes, directories, and individual files. The project is built around a C++17
-erase engine with command-line and Qt desktop front ends.
+volumes, directories, and individual files. Current source builds also include
+a Qt GUI drive cloning workflow for byte-for-byte physical drive copies and a
+drive analytics view for health-related and device identity properties. The
+project is built around C++17 core engines with command-line and Qt desktop
+front ends.
 
 DataScythe performs destructive operations. Use it only on targets that are
 authorized for permanent erasure, and verify every device path before
@@ -77,6 +80,11 @@ operating system.
 DataScythe supports:
 
 - Physical drive enumeration
+- GUI drive analytics for identity, SSD/HDD classification, geometry, TRIM,
+  cache, alignment, volume, and platform health-related properties
+- GUI byte-for-byte physical drive cloning with optional full verification
+- SHA-256 clone evidence hashes and exportable clone reports
+- Exportable GUI analytics reports
 - Full-device overwrite
 - Quick zero-fill
 - Mounted volume shredding
@@ -190,7 +198,7 @@ Linux and macOS release archives are produced with CPack and then staged under
 ```text
 apps/cli/          Command-line entry point
 apps/gui/          Qt desktop application
-src/core/          Erase engine, certificates, scheduling, verification
+src/core/          Erase/clone engines, certificates, scheduling, verification
 src/platform/      Platform interfaces
 platform/          Windows, Linux, and macOS implementations
 docs/              Operator, release, and security documentation
