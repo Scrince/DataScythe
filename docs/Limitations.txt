@@ -6,7 +6,8 @@ Release Boundary
 
 This document specifies non-recoverable and partially-recoverable data
 boundaries for DataScythe v0.1.0. It applies to software overwrite, partition
-metadata wipe, file shredding, and hardware secure erase paths.
+metadata wipe, file shredding, hardware secure erase paths, and the unreleased
+GUI drive clone and drive analytics workflows in current source builds.
 
 Use the verified release hash published in docs/SHA256SUMS before relying on
 this document with a particular binary build.
@@ -20,6 +21,8 @@ This document defines:
   - What regions an erase operation attempts to destroy
   - What regions may retain data after a successful operation
   - Verification limits
+  - Byte-for-byte clone limits
+  - Drive analytics visibility limits
   - Recovery expectations (data is not recoverable through DataScythe after erase)
   - Environmental factors outside the tool
 
@@ -59,6 +62,14 @@ Software overwrite modes destroy OS-readable bytes on the selected target:
 
   SsdSecureErase:
       Firmware-defined sanitize scope for NVMe or ATA secure erase commands
+
+DriveClone, in current unreleased source builds, copies:
+
+  Bytes 0 .. source_size - 1 from the selected source physical drive
+  To the same offsets on the selected target physical drive
+
+Clone target bytes beyond source_size are not overwritten when the target is
+larger than the source.
 
 Partition metadata wipe overwrites:
 
@@ -118,6 +129,16 @@ CryptoErase may leave non-zero host-readable patterns while still sanitizing
 media encryption keys. A verification failure after crypto erase does not
 always mean the sanitize command failed.
 
+Drive clone verification is a full byte-for-byte read comparison of the copied
+source range when enabled. It proves that the target matched source reads at
+verification time for bytes 0 .. source_size - 1. It does not prove that:
+
+  - The source was static during a live-system clone
+  - Target bytes beyond source_size are defined
+  - Firmware-hidden, remapped, or controller-reserved areas were copied
+  - The host operating system or controller did not cache, transform, or reorder
+    I/O outside DataScythe visibility
+
 
 Cancellation Boundary
 ---------------------
@@ -130,6 +151,11 @@ passes. A partially shredded file or partially wiped drive may contain:
   - Inconsistent partition tables if metadata wipe completed but data passes did not
 
 Treat cancelled targets as compromised for confidentiality purposes.
+
+For drive clone, cancellation leaves the target as a partial clone: earlier
+offset ranges may match the source, later ranges may contain previous target
+data, and partition tables may describe filesystems whose contents were not yet
+fully copied.
 
 
 Hardware Secure Erase Limitations
@@ -172,8 +198,44 @@ Selecting the wrong physical drive index while typing the correct ERASE phrase
 still destroys the wrong device. The phrase confirms acknowledgment, not serial
 number matching.
 
+Selecting the wrong clone target while typing the correct CLONE phrase still
+overwrites the wrong device. The phrase binds to the displayed target
+physical_index, not to an independent serial-number challenge.
+
 Drive size 0 in the GUI table often indicates missing Administrator privileges,
 not a zero-capacity device.
+
+For forensic acquisition, cloning a running system drive as the source can
+produce an internally inconsistent copy because filesystems, journals, swap,
+and metadata may change while the clone is reading. Use a powered-off source or
+trusted write-blocked acquisition environment when evidence stability matters.
+
+
+Drive Analytics Limitations
+---------------------------
+
+The Analytics tab reports data exposed by the operating system and controller
+interfaces available to DataScythe. It is an inspection aid, not a complete
+vendor diagnostic suite.
+
+Generic analytics may be unable to report:
+
+  Vendor-specific SMART attributes
+  NVMe SMART / Health Information log counters
+  Temperature, lifetime writes, power-on hours, unsafe shutdowns, and media
+  error counters when blocked by the driver stack
+  USB bridge health data hidden behind SAT translation limits
+  RAID member disk health when the controller exposes only a virtual disk
+  Firmware-private failure prediction state
+
+SSD/HDD classification is inferred from enumerator type, bus type, seek penalty,
+TRIM/discard support, and platform metadata. Misreporting is possible behind
+USB adapters, RAID controllers, hypervisors, and unusual firmware.
+
+A "basic properties collected" or non-critical health summary means no generic
+storage property indicated a failure; it does not certify the drive as healthy.
+For forensic or production qualification, corroborate with vendor diagnostics,
+SMART tooling, NVMe health logs, and physical chain-of-custody procedures.
 
 
 Recovery Procedures
