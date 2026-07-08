@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstddef>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -42,13 +43,53 @@ DriveType classify_bus(std::uint8_t bus_type, bool removable) {
         case BusTypeUsb:
             return DriveType::Removable;
         case BusTypeNvme:
-        case BusTypeSata:
-        case BusTypeAta:
-        case BusTypeScsi:
-            return DriveType::SSD;  // refined below when possible
+        case BusTypeSd:
+        case BusTypeMmc:
+            return DriveType::SSD;
         default:
             return DriveType::Unknown;
     }
+}
+
+std::string descriptor_string(const std::vector<std::uint8_t>& buffer, DWORD offset) {
+    if (offset == 0 || offset >= buffer.size()) {
+        return {};
+    }
+    const auto begin = buffer.begin() + static_cast<std::ptrdiff_t>(offset);
+    const auto end = std::find(begin, buffer.end(), 0);
+    return std::string(begin, end);
+}
+
+void refine_media_type(HANDLE handle, DriveInfo& info) {
+    STORAGE_PROPERTY_QUERY query{};
+    query.QueryType = PropertyStandardQuery;
+
+    query.PropertyId = StorageDeviceSeekPenaltyProperty;
+    DEVICE_SEEK_PENALTY_DESCRIPTOR seek{};
+    DWORD returned = 0;
+    if (DeviceIoControl(handle, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof(query), &seek,
+                        sizeof(seek), &returned, nullptr)) {
+        info.type = seek.IncursSeekPenalty ? DriveType::HDD : DriveType::SSD;
+        return;
+    }
+
+    query.PropertyId = StorageDeviceTrimProperty;
+    DEVICE_TRIM_DESCRIPTOR trim{};
+    if (DeviceIoControl(handle, IOCTL_STORAGE_QUERY_PROPERTY, &query, sizeof(query), &trim,
+                        sizeof(trim), &returned, nullptr) &&
+        trim.TrimEnabled) {
+        info.type = DriveType::SSD;
+    }
+}
+
+void query_read_only(HANDLE handle, DriveInfo& info) {
+    DWORD returned = 0;
+    if (DeviceIoControl(handle, IOCTL_DISK_IS_WRITABLE, nullptr, 0, nullptr, 0, &returned,
+                        nullptr)) {
+        info.is_read_only = false;
+        return;
+    }
+    info.is_read_only = GetLastError() == ERROR_WRITE_PROTECT;
 }
 
 bool query_drive(int index, DriveInfo& info, int system_disk_number) {
@@ -73,13 +114,13 @@ bool query_drive(int index, DriveInfo& info, int system_disk_number) {
                         static_cast<DWORD>(buffer.size()), &returned, nullptr)) {
         const auto* desc = reinterpret_cast<STORAGE_DEVICE_DESCRIPTOR*>(buffer.data());
         if (desc->VendorIdOffset) {
-            info.vendor = reinterpret_cast<const char*>(buffer.data() + desc->VendorIdOffset);
+            info.vendor = descriptor_string(buffer, desc->VendorIdOffset);
         }
         if (desc->ProductIdOffset) {
-            info.model = reinterpret_cast<const char*>(buffer.data() + desc->ProductIdOffset);
+            info.model = descriptor_string(buffer, desc->ProductIdOffset);
         }
         if (desc->SerialNumberOffset) {
-            info.serial = reinterpret_cast<const char*>(buffer.data() + desc->SerialNumberOffset);
+            info.serial = descriptor_string(buffer, desc->SerialNumberOffset);
         }
         info.is_removable = desc->RemovableMedia != 0;
         info.type = classify_bus(desc->BusType, info.is_removable);
@@ -113,10 +154,13 @@ bool query_drive(int index, DriveInfo& info, int system_disk_number) {
         if (geometry.MediaType == RemovableMedia) {
             info.is_removable = true;
             info.type = DriveType::Removable;
-        } else if (info.type == DriveType::SSD && geometry.MediaType == FixedMedia) {
-            info.type = DriveType::HDD;
         }
     }
+
+    if (info.type != DriveType::Removable) {
+        refine_media_type(handle, info);
+    }
+    query_read_only(handle, info);
 
     info.is_system_drive = (index == system_disk_number);
     CloseHandle(handle);
