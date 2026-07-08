@@ -6,6 +6,18 @@ references in `docs/`.
 
 ## [Unreleased]
 
+### Added
+
+- Qt GUI drive cloning tab for byte-for-byte physical drive copies with optional
+  full byte comparison verification.
+- Core `DriveCloneEngine` using platform raw-device I/O, target dismount, size
+  checks, cancellation, progress reporting, and in-memory unit coverage.
+- Qt GUI Analytics tab for selected-drive identity, SSD/HDD classification,
+  geometry, cache, TRIM/discard, alignment, volume, and platform health-related
+  properties.
+- SHA-256 hashing during drive clone operations, plus GUI export for clone
+  evidence reports and analytics reports.
+
 ## [0.1.0] - 2026-07-05
 
 ### Added
