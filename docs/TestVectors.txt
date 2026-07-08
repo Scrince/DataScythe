@@ -7,7 +7,8 @@ Release Boundary
 This document is the conformance suite for DataScythe v0.1.0 core logic in
 src/core/ and src/platform/nvme_admin.h. Vectors cover pass scheduling,
 pattern generation, partition metadata geometry, NVMe sanitize progress parsing,
-certificate serialization, and filename sanitization.
+certificate serialization, filename sanitization, SHA-256 hashing, and current
+source-build drive clone behavior.
 
 Integration tests for destructive raw-device I/O are intentionally absent from
 v0.1.0. Passing these vectors is necessary but not sufficient for hardware
@@ -117,6 +118,18 @@ Input:
 Expected:
 
   0
+
+
+TV-HASH-01 SHA-256 ABC
+----------------------
+
+Input:
+
+  sha256_hex("abc", 3)
+
+Expected:
+
+  "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
 
 TV-NVME-03 Poll Complete State
@@ -279,6 +292,42 @@ Expected:
   schedule_no_zero.back() == last when final_zero_pass toggled false
 
 
+TV-CLONE-01 Copy And Verify
+---------------------------
+
+Input:
+
+  MemoryRawDevice source path "source", size 8192 bytes
+  source[i] = i % 251
+  MemoryRawDevice target path "target", size 8192 bytes, initialized to 0xA5
+  DriveCloneConfig verify_after_clone = true
+  clone("source", "target", config, progress_callback)
+
+Expected:
+
+  result.success == true
+  result.verification_passed == true
+  target bytes exactly equal source bytes
+  result.source_sha256 == result.target_sha256
+  result.source_sha256 == sha256_hex(source bytes)
+  progress callback invoked at least once
+
+
+TV-CLONE-02 Export Report
+-------------------------
+
+Input:
+
+  CloneReport with source path "source", target path "target",
+  verify_after_clone true, success true, matching SHA-256 strings
+  export_clone_report to "datascythe_clone_report_test.txt"
+
+Expected file contains substrings:
+
+  "DATASCYTHE CLONE REPORT"
+  "Source SHA-256"
+
+
 Running the Suite
 -----------------
 
@@ -306,6 +355,8 @@ The following are not automated in v0.1.0 but must be rejected at runtime:
   - folder mode with multiple CLI targets (exit 1)
   - CLI confirmation "yes" lowercase (aborted, exit 1)
   - GUI phrase "erase 1" lowercase for drive index 1 (accept button disabled)
+  - GUI clone to detected system drive (critical dialog before phrase)
+  - GUI clone where target is smaller than source (critical dialog before phrase)
 
 
 Related Documentation
