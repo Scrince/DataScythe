@@ -6,7 +6,8 @@ Release Boundary
 
 This document specifies the promoted production DataScythe v0.1.0 confirmation
 gates implemented in apps/gui/confirmation_dialog.cpp, apps/gui/main_window.cpp,
-and apps/cli/main.cpp.
+and apps/cli/main.cpp. Current unreleased source builds add a GUI-only drive
+clone confirmation class.
 
 Version 0.1.0 does not implement time-based session timeout or automatic secret
 clearing. Confirmation phrases are the sole software acknowledgment before
@@ -54,6 +55,23 @@ Class D: drive-level operations
       ERASE 0
       ERASE 2
       ERASE 12
+
+Class L: GUI drive clone target acknowledgment
+
+  Applies to:
+      Drive clone tab, cloning source physical drive to target physical drive
+
+  Phrase:
+
+      CLONE <target physical_index>
+
+  Where target physical_index is DriveInfo.physical_index for the selected
+  target table row. The source drive index is not part of the phrase.
+
+  Examples:
+
+      CLONE 1
+      CLONE 3
 
 Class F: file shred operations
 
@@ -105,7 +123,8 @@ Drive constructor fields:
 
 Path constructor fields:
 
-  required_phrase_ = supplied confirmation_phrase (SHRED FILES / SHRED FOLDER)
+  required_phrase_ = supplied confirmation_phrase (SHRED FILES / SHRED FOLDER /
+  CLONE <target physical_index>)
 
 Warning label HTML includes:
 
@@ -145,6 +164,13 @@ Drive operations:
   Text:  "Last chance: permanently erase <device_path>?"
   Buttons: Yes | No (default No)
 
+Drive clone operations:
+
+  Title: "Final confirmation"
+  Text:  "Last chance: overwrite <target_device_path> with a byte-for-byte
+          clone of <source_device_path>?"
+  Buttons: Yes | No (default No)
+
 File/folder operations:
 
   Title: "Final confirmation"
@@ -152,6 +178,7 @@ File/folder operations:
   Buttons: Yes | No (default No)
 
 Both dialogs must succeed for the GUI to start the erase job.
+For clone, both dialogs must succeed for the GUI to start the clone job.
 
 
 CLI Confirmation Procedure
@@ -181,6 +208,8 @@ The following do not use ERASE / SHRED phrases but still require CLI YES unless
 Drive phrases never apply to CLI file paths. CLI file and folder modes use YES
 only, not SHRED FILES / SHRED FOLDER strings.
 
+Drive clone is GUI-only in current source builds and has no CLI YES path.
+
 
 Blocked Operations (No Confirmation Reached)
 --------------------------------------------
@@ -189,6 +218,13 @@ System drive blocking occurs before confirmation:
 
   GUI: critical message "Operations on the system drive are blocked..."
   CLI: "Refusing to erase system target: <path>" exit 1
+
+Clone target system-drive blocking occurs before confirmation:
+
+  GUI: critical message "Cloning to the system drive is blocked..."
+
+Clone also rejects same-drive source/target selection, read-only targets, and
+targets smaller than the source before presenting the phrase dialog.
 
 Pre-flight failure occurs before confirmation when checks return errors.
 
@@ -210,6 +246,9 @@ The ERASE N phrase binds acknowledgment to the enumerated physical_index at
 confirmation time. If the drive list changes between confirmation and execution,
 the operator must cancel and reconfirm. The GUI starts the job immediately after
 confirmation without revalidating the phrase against a refreshed table.
+
+The CLONE N phrase binds acknowledgment to the selected target physical_index at
+confirmation time. It does not independently verify model or serial number.
 
 
 Automation Hazard
