@@ -15,6 +15,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -200,8 +201,11 @@ void test_final_verification_pattern_logic() {
 
 class MemoryRawDevice final : public datascythe::IRawDevice {
 public:
-    MemoryRawDevice(std::string expected_path, std::vector<std::uint8_t> bytes)
-        : expected_path_(std::move(expected_path)), bytes_(std::move(bytes)) {}
+    MemoryRawDevice(std::string expected_path, std::vector<std::uint8_t> bytes,
+                    bool flush_success = true)
+        : expected_path_(std::move(expected_path)),
+          bytes_(std::move(bytes)),
+          flush_success_(flush_success) {}
 
     bool open(const std::string& path, std::string& error_out) override {
         if (path != expected_path_) {
@@ -243,7 +247,13 @@ public:
         return true;
     }
 
-    bool flush(std::string&) override { return true; }
+    bool flush(std::string& error_out) override {
+        if (!flush_success_) {
+            error_out = "injected flush failure";
+            return false;
+        }
+        return true;
+    }
     bool dismount_volumes(std::string&) override { return true; }
     bool remove_target(std::string& error_out) override {
         error_out = "remove unsupported";
@@ -255,6 +265,34 @@ public:
 private:
     std::string expected_path_;
     std::vector<std::uint8_t> bytes_;
+    bool flush_success_ = true;
+    bool open_ = false;
+};
+
+class HugeRawDevice final : public datascythe::IRawDevice {
+public:
+    bool open(const std::string&, std::string&) override {
+        open_ = true;
+        return true;
+    }
+    void close() override { open_ = false; }
+    bool is_open() const override { return open_; }
+    datascythe::RawTargetType target_type() const override {
+        return datascythe::RawTargetType::BlockDevice;
+    }
+    std::uint64_t size_bytes(std::string&) const override {
+        return std::numeric_limits<std::uint64_t>::max();
+    }
+    std::uint64_t block_size(std::string&) const override { return 512; }
+    bool write_at(std::uint64_t, const void*, std::size_t, std::string&) override {
+        return true;
+    }
+    bool read_at(std::uint64_t, void*, std::size_t, std::string&) override { return true; }
+    bool flush(std::string&) override { return true; }
+    bool dismount_volumes(std::string&) override { return true; }
+    bool remove_target(std::string&) override { return false; }
+
+private:
     bool open_ = false;
 };
 
@@ -373,6 +411,50 @@ void test_drive_clone_engine_copies_and_verifies() {
     expect_true(progress_calls > 0, "clone reports progress");
 }
 
+void test_logger_session_does_not_deadlock_and_snapshots_entries() {
+    datascythe::Logger logger;
+    logger.begin_session("target", "mode");
+    logger.info("during");
+    logger.end_session(true);
+
+    const auto entries = logger.entries();
+    expect_true(entries.size() >= 3, "logger records session entries");
+    expect_true(entries.front().find("Session started") != std::string::npos,
+                "logger session start recorded");
+}
+
+void test_drive_clone_fails_on_target_flush_error() {
+    std::vector<std::uint8_t> source_bytes(4096, 0x5A);
+    std::vector<std::uint8_t> target_bytes(source_bytes.size(), 0x00);
+
+    auto source = std::make_unique<MemoryRawDevice>("source", source_bytes);
+    auto target = std::make_unique<MemoryRawDevice>("target", target_bytes, false);
+
+    datascythe::DriveCloneEngine engine(std::move(source), std::move(target));
+    datascythe::DriveCloneConfig config;
+    config.verify_after_clone = false;
+
+    const auto result = engine.clone("source", "target", config, nullptr);
+    expect_true(!result.success, "drive clone fails when target flush fails");
+    expect_true(result.error == datascythe::EraseError::IoError,
+                "clone target flush failure is I/O error");
+}
+
+void test_erase_rejects_overflowing_work_size() {
+    auto device = std::make_unique<HugeRawDevice>();
+    datascythe::EraseEngine engine(std::move(device));
+    datascythe::EraseConfig config;
+    config.mode = datascythe::EraseMode::FullDeviceWipe;
+    config.pass_count = 2;
+    config.final_zero_pass = false;
+    config.wipe_partition_metadata = false;
+
+    const auto result = engine.erase_target("huge", config, nullptr);
+    expect_true(!result.success, "erase rejects overflowing progress totals");
+    expect_true(result.error == datascythe::EraseError::InvalidTarget,
+                "overflowing erase size is invalid target");
+}
+
 void test_export_clone_report() {
     datascythe::CloneReport report;
     report.source.device_path = "source";
@@ -426,7 +508,7 @@ void test_nvme_poll_complete() {
     expect_true(called, "progress callback invoked");
 }
 
-}  // namespace
+}  
 
 int main() {
     test_pass_scheduler_count();
@@ -445,6 +527,9 @@ int main() {
     test_erase_fails_on_write_error();
     test_erase_fails_on_flush_error();
     test_drive_clone_engine_copies_and_verifies();
+    test_logger_session_does_not_deadlock_and_snapshots_entries();
+    test_drive_clone_fails_on_target_flush_error();
+    test_erase_rejects_overflowing_work_size();
     test_export_clone_report();
     test_nvme_poll_complete();
 
