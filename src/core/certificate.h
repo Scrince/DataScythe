@@ -34,15 +34,15 @@ bool export_certificate(const ErasureCertificate& cert, const std::string& path,
 
 std::string mode_to_string(EraseMode mode);
 
-/// Sanitize a target path into a certificate filename component.
+
 std::string sanitize_target_for_filename(const std::string& target);
 
-/// Default auto-save directory for erasure certificates.
+
 std::string default_certificate_directory();
 
-/// Build a full path for auto-exporting a certificate for the given target.
+
 std::string default_certificate_path(const std::string& target);
 
 bool ensure_parent_directory(const std::string& path, std::string& error_out);
 
-}  // namespace datascythe
+}  
