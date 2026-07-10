@@ -7,9 +7,48 @@
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 #include <sstream>
 
 namespace datascythe {
+
+namespace {
+
+bool checked_add(std::uint64_t a, std::uint64_t b, std::uint64_t& out) {
+    if (a > std::numeric_limits<std::uint64_t>::max() - b) {
+        return false;
+    }
+    out = a + b;
+    return true;
+}
+
+bool checked_multiply(std::uint64_t a, std::uint64_t b, std::uint64_t& out) {
+    if (a != 0 && b > std::numeric_limits<std::uint64_t>::max() / a) {
+        return false;
+    }
+    out = a * b;
+    return true;
+}
+
+bool accumulate_work_bytes(std::uint64_t bytes, std::uint64_t passes,
+                           std::uint64_t& total_out) {
+    std::uint64_t target_total = 0;
+    if (!checked_multiply(bytes, passes, target_total)) {
+        return false;
+    }
+    return checked_add(total_out, target_total, total_out);
+}
+
+bool effective_pass_count(std::size_t pass_count, bool final_zero_pass,
+                          std::uint64_t& passes_out) {
+    passes_out = static_cast<std::uint64_t>(pass_count);
+    if (final_zero_pass) {
+        return checked_add(passes_out, 1, passes_out);
+    }
+    return true;
+}
+
+}  
 
 EraseEngine::EraseEngine(std::unique_ptr<IRawDevice> device) : device_(std::move(device)) {}
 
@@ -29,8 +68,11 @@ void EraseEngine::report_progress(EraseProgress& prog, const OperationContext& o
     if (op.overall_bytes_done > 0 && elapsed_sec > 0) {
         const double bytes_per_sec =
             static_cast<double>(op.overall_bytes_done) / static_cast<double>(elapsed_sec);
-        const double remaining =
-            static_cast<double>(op.overall_bytes_total - op.overall_bytes_done);
+        const std::uint64_t remaining_bytes =
+            op.overall_bytes_total > op.overall_bytes_done
+                ? op.overall_bytes_total - op.overall_bytes_done
+                : 0;
+        const double remaining = static_cast<double>(remaining_bytes);
         prog.eta_seconds = static_cast<std::int64_t>(remaining / bytes_per_sec);
     } else {
         prog.eta_seconds = -1;
@@ -103,9 +145,19 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
         if (size == 0) {
             continue;
         }
-        const std::size_t passes =
-            work_config.pass_count + (work_config.final_zero_pass ? 1 : 0);
-        op.overall_bytes_total += size * passes;
+        std::uint64_t passes = 0;
+        if (!effective_pass_count(work_config.pass_count, work_config.final_zero_pass, passes)) {
+            aggregate.success = false;
+            aggregate.error = EraseError::InvalidTarget;
+            aggregate.message = "Erase pass count is too large to track safely";
+            return aggregate;
+        }
+        if (!accumulate_work_bytes(size, passes, op.overall_bytes_total)) {
+            aggregate.success = false;
+            aggregate.error = EraseError::InvalidTarget;
+            aggregate.message = "Erase size is too large to track safely";
+            return aggregate;
+        }
     }
 
     if (logger_) {
@@ -264,10 +316,31 @@ EraseResult EraseEngine::erase_target(const std::string& path, const EraseConfig
     }
 
     if (config.mode == EraseMode::QuickZeroFill) {
-        op.overall_bytes_total = total_size + metadata_bytes;
+        if (!checked_add(total_size, metadata_bytes, op.overall_bytes_total)) {
+            result.success = false;
+            result.error = EraseError::InvalidTarget;
+            result.message = "Erase size is too large to track safely";
+            device_->close();
+            if (logger_) {
+                logger_->error(result.message);
+            }
+            return result;
+        }
     } else {
-        op.overall_bytes_total =
-            total_size * (config.pass_count + (config.final_zero_pass ? 1 : 0)) + metadata_bytes;
+        std::uint64_t passes = 0;
+        std::uint64_t data_bytes = 0;
+        if (!effective_pass_count(config.pass_count, config.final_zero_pass, passes) ||
+            !checked_multiply(total_size, passes, data_bytes) ||
+            !checked_add(data_bytes, metadata_bytes, op.overall_bytes_total)) {
+            result.success = false;
+            result.error = EraseError::InvalidTarget;
+            result.message = "Erase size is too large to track safely";
+            device_->close();
+            if (logger_) {
+                logger_->error(result.message);
+            }
+            return result;
+        }
     }
 
     if (wipe_metadata) {
@@ -581,4 +654,4 @@ bool EraseEngine::write_full_pass(int pattern_type, std::uint64_t total_size,
     return true;
 }
 
-}  // namespace datascythe
+}  
