@@ -8,7 +8,7 @@
 
 namespace datascythe {
 
-/// Thread-safe in-memory log with optional file export.
+
 class Logger {
 public:
     void info(const std::string& message);
@@ -18,7 +18,7 @@ public:
     void begin_session(const std::string& device_id, const std::string& mode_summary);
     void end_session(bool success);
 
-    const std::vector<std::string>& entries() const { return entries_; }
+    std::vector<std::string> entries() const;
 
     bool export_to_file(const std::string& path, std::string& error_out) const;
 
@@ -26,6 +26,7 @@ public:
 
 private:
     void append(const std::string& level, const std::string& message);
+    void append_unlocked(const std::string& level, const std::string& message);
 
     mutable std::mutex mutex_;
     std::vector<std::string> entries_;
@@ -34,4 +35,4 @@ private:
     std::string session_mode_;
 };
 
-}  // namespace datascythe
+}  
