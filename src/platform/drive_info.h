@@ -35,4 +35,4 @@ struct DriveInfo {
     std::vector<VolumeInfo> volumes;
 };
 
-}  // namespace datascythe
+}  
