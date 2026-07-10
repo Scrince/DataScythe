@@ -70,4 +70,4 @@ std::vector<std::string> PathCollector::collect_files(const std::string& path, b
     return files;
 }
 
-}  // namespace datascythe
+}  
