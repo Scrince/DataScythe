@@ -37,4 +37,4 @@ private:
     std::vector<DriveInfo> drives_;
 };
 
-}  // namespace datascythe::gui
+}  
