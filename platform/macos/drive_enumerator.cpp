@@ -48,12 +48,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<IDriveEnumerator> create_drive_enumerator() {
     return std::make_unique<MacDriveEnumerator>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
