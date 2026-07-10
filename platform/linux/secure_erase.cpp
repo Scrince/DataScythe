@@ -14,7 +14,7 @@
 
 #include <linux/nvme_ioctl.h>
 
-// HDIO_DRIVE_CMD ioctl for ATA security erase.
+
 #ifndef HDIO_DRIVE_CMD
 #define HDIO_DRIVE_CMD 0x031f
 #endif
@@ -49,9 +49,9 @@ DriveBusType detect_bus(const std::string& path) {
 }
 
 bool ata_security_erase(int fd, std::string& error_out) {
-    // HDIO_DRIVE_CMD buffer: 4-byte header + up to 512 bytes payload (see hdparm).
+    
     unsigned char prepare[4 + 512]{};
-    prepare[0] = 0xF3;  // ATA_OP_SECURITY_ERASE_PREPARE
+    prepare[0] = 0xF3;  
 
     if (ioctl(fd, HDIO_DRIVE_CMD, prepare) < 0) {
         error_out = std::string("ATA SECURITY ERASE PREPARE failed: ") + std::strerror(errno);
@@ -59,8 +59,8 @@ bool ata_security_erase(int fd, std::string& error_out) {
     }
 
     unsigned char erase[4 + 512]{};
-    erase[0] = 0xF4;  // ATA_OP_SECURITY_ERASE_UNIT
-    erase[1] = 0x11;  // enhanced erase (0x10 = normal)
+    erase[0] = 0xF4;  
+    erase[1] = 0x11;  
 
     if (ioctl(fd, HDIO_DRIVE_CMD, erase) < 0) {
         error_out = std::string("ATA SECURITY ERASE UNIT failed: ") + std::strerror(errno);
@@ -213,12 +213,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<ISecureErase> create_secure_erase() {
     return std::make_unique<LinuxSecureErase>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
