@@ -41,8 +41,8 @@ if (Test-Path -LiteralPath (Join-Path $guiBuild "DataScythe.exe")) {
     Write-Warning "GUI binary not found; staging CLI only."
 }
 
-# Windows file systems are case-insensitive; use datascythe-cli.exe to avoid
-# colliding with DataScythe.exe in the same release folder.
+
+
 Copy-IfExists (Join-Path $cliBuild "datascythe.exe") (Join-Path $stageDir "datascythe-cli.exe")
 
 @"
