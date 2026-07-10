@@ -11,6 +11,6 @@ std::vector<std::string> enumerate_alternate_data_streams(const std::string& fil
     return {};
 }
 
-}  // namespace datascythe
+}  
 
 #endif
