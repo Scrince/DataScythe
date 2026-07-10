@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -28,6 +29,32 @@ bool is_volume_path(const std::string& path) {
     }
     return path.size() >= 2 && path[1] == ':' &&
            (path.size() == 2 || path[2] == '\\');
+}
+
+bool parse_physical_drive_index(const std::string& path, int& index_out) {
+    const auto pos = path.find("PhysicalDrive");
+    if (pos == std::string::npos) {
+        return false;
+    }
+
+    const std::string suffix = path.substr(pos + 13);
+    if (suffix.empty() ||
+        !std::all_of(suffix.begin(), suffix.end(), [](unsigned char ch) {
+            return std::isdigit(ch) != 0;
+        })) {
+        return false;
+    }
+
+    unsigned long value = 0;
+    for (const char ch : suffix) {
+        value = value * 10 + static_cast<unsigned long>(ch - '0');
+        if (value > static_cast<unsigned long>(std::numeric_limits<int>::max())) {
+            return false;
+        }
+    }
+
+    index_out = static_cast<int>(value);
+    return true;
 }
 
 class WindowsRawDevice final : public IRawDevice {
@@ -233,11 +260,11 @@ public:
             return true;
         }
 
-        const auto pos = path_.find("PhysicalDrive");
-        if (pos == std::string::npos) {
-            return true;
+        int index = -1;
+        if (!parse_physical_drive_index(path_, index)) {
+            error_out = "Invalid physical drive path: " + path_;
+            return false;
         }
-        const int index = std::stoi(path_.substr(pos + 13));
         auto volume_manager = create_volume_manager();
         return volume_manager->dismount_physical_drive(index, error_out);
     }
@@ -256,7 +283,7 @@ public:
         handle_ = INVALID_HANDLE_VALUE;
 
         if (SetFileAttributesA(path_.c_str(), FILE_ATTRIBUTE_NORMAL) == 0) {
-            // Non-fatal.
+            
         }
 
         if (DeleteFileA(path_.c_str()) == 0) {
@@ -274,12 +301,12 @@ private:
     RawTargetType target_type_ = RawTargetType::Unknown;
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<IRawDevice> create_raw_device() {
     return std::make_unique<WindowsRawDevice>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
