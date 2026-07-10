@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <vector>
 
-// macOS does not ship linux/nvme_ioctl.h; define the ioctl locally.
+
 #ifndef NVME_IOCTL_ADMIN_CMD
 struct nvme_user_admin_cmd {
     std::uint8_t opcode;
@@ -38,7 +38,7 @@ struct nvme_user_admin_cmd {
 #define NVME_IOCTL_ADMIN_CMD _IOWR('N', 0x41, struct nvme_user_admin_cmd)
 #endif
 
-// ATA pass-through via DKIOC / legacy ATA ioctl (not always available).
+
 #ifndef DKIOCISSUESECUREERASE
 #define DKIOCISSUESECUREERASE 0x8004685D
 #endif
@@ -54,7 +54,7 @@ bool is_nvme_device(const std::string& path) {
 }
 
 bool open_read_write(const std::string& path, int& fd_out, std::string& error_out) {
-    // Prefer raw disk for whole-device operations.
+    
     std::string raw_path = path;
     if (raw_path.find("/dev/disk") == 0 && raw_path.find("/dev/rdisk") != 0) {
         raw_path = "/dev/r" + raw_path.substr(5);
@@ -159,8 +159,8 @@ bool nvme_sanitize(int fd, nvme::SanitizeAction action, std::string& error_out) 
 }
 
 bool ata_security_erase(int fd, std::string& error_out) {
-    // Best-effort: some Apple internal SATA controllers accept this private ioctl.
-    std::uint32_t mode = 1;  // enhanced erase
+    
+    std::uint32_t mode = 1;  
     if (ioctl(fd, DKIOCISSUESECUREERASE, &mode) == 0) {
         return true;
     }
@@ -236,12 +236,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<ISecureErase> create_secure_erase() {
     return std::make_unique<MacSecureErase>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
