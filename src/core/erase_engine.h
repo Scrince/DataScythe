@@ -14,14 +14,14 @@
 
 namespace datascythe {
 
-/// Pure C++ erase engine. Platform specifics are injected via IRawDevice.
-///
-/// Security note: this engine overwrites every byte the OS exposes for the target.
-/// Hardware-reserved regions (HPA/DCO, firmware, SSD controller remapped blocks,
-/// wear-leveling pools) may remain outside user-space visibility.
+
+
+
+
+
 class EraseEngine {
 public:
-    static constexpr std::size_t kBufferSize = 1024 * 1024;  // 1 MiB chunks
+    static constexpr std::size_t kBufferSize = 1024 * 1024;  
     static constexpr std::size_t kSectorSize = 512;
 
     explicit EraseEngine(std::unique_ptr<IRawDevice> device);
@@ -32,7 +32,7 @@ public:
     EraseResult erase_target(const std::string& path, const EraseConfig& config,
                              ProgressCallback progress);
 
-    /// Shred multiple files or the contents of a directory.
+    
     EraseResult erase_paths(const std::vector<std::string>& paths, const EraseConfig& config,
                             ProgressCallback progress);
 
@@ -77,4 +77,4 @@ private:
     std::atomic<bool> cancel_requested_{false};
 };
 
-}  // namespace datascythe
+}  
