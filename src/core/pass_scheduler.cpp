@@ -7,7 +7,7 @@ namespace datascythe {
 
 namespace {
 
-// GNU shred pattern groups (see shred.c patterns[]).
+
 const int kShredPatterns[] = {
     -2,
     2, 0x000, 0xFFF,
@@ -32,7 +32,7 @@ std::size_t random_choose(std::mt19937_64& rng, std::size_t upper_exclusive) {
     return dist(rng);
 }
 
-}  // namespace
+}  
 
 PassScheduler::PassScheduler(std::uint64_t seed) : rng_(seed) {}
 
@@ -103,8 +103,8 @@ std::vector<int> PassScheduler::build_schedule(std::size_t pass_count,
     }
 
     if (random_slots == 0) {
-        // No random passes requested: if we have fewer fixed patterns than passes,
-        // repeat the fixed set.
+        
+        
         for (std::size_t i = fixed_count; i < total; ++i) {
             schedule[i] = fixed[i % fixed_count];
         }
@@ -137,4 +137,4 @@ std::vector<int> PassScheduler::build_schedule(std::size_t pass_count,
     return schedule;
 }
 
-}  // namespace datascythe
+}  
