@@ -60,7 +60,7 @@ bool verify_zero_samples_impl(IRawDevice& device, std::uint64_t total_size, Eras
     return true;
 }
 
-}  // namespace
+}  
 
 bool verify_zero_samples(IRawDevice& device, std::uint64_t total_size, EraseResult& result,
                          const std::function<bool()>& should_cancel) {
@@ -89,4 +89,4 @@ bool verify_target_zeroed(const std::string& path, EraseResult& result) {
     return ok;
 }
 
-}  // namespace datascythe
+}  
