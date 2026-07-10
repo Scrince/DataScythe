@@ -17,7 +17,7 @@ public:
     ConfirmationDialog(const DriveInfo& drive, const QString& operation_title,
                        const QString& operation_description, QWidget* parent = nullptr);
 
-    /// Generic confirmation for file/folder targets.
+    
     ConfirmationDialog(const QString& target_path, const QString& confirmation_phrase,
                        const QString& operation_title, const QString& operation_description,
                        QWidget* parent = nullptr);
@@ -34,4 +34,4 @@ private:
     QLabel* warning_label_ = nullptr;
 };
 
-}  // namespace datascythe::gui
+}  
