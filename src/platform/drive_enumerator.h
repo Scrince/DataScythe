@@ -16,4 +16,4 @@ public:
 
 std::unique_ptr<IDriveEnumerator> create_drive_enumerator();
 
-}  // namespace datascythe
+}  
