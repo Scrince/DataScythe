@@ -91,4 +91,4 @@ bool wipe_partition_metadata(IRawDevice& device, std::uint64_t device_size,
     return true;
 }
 
-}  // namespace datascythe
+}  
