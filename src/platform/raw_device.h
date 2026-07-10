@@ -18,7 +18,7 @@ enum class RawTargetType {
     Volume,
 };
 
-/// Platform-neutral interface for low-level read/write access.
+
 class IRawDevice {
 public:
     virtual ~IRawDevice() = default;
@@ -36,13 +36,13 @@ public:
                          std::string& error_out) = 0;
     virtual bool flush(std::string& error_out) = 0;
 
-    /// Attempt to dismount volumes hosted on this device (best effort).
+    
     virtual bool dismount_volumes(std::string& error_out) = 0;
 
-    /// Truncate and remove the target after shredding (files only).
+    
     virtual bool remove_target(std::string& error_out) = 0;
 };
 
 std::unique_ptr<IRawDevice> create_raw_device();
 
-}  // namespace datascythe
+}  
