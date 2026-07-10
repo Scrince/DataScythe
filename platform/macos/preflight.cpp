@@ -53,12 +53,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<IPreflightChecker> create_preflight_checker() {
     return std::make_unique<MacPreflightChecker>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
