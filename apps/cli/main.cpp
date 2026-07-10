@@ -203,7 +203,7 @@ bool is_system_target(const std::string& path) {
     return false;
 }
 
-}  // namespace
+}  
 
 int main(int argc, char* argv[]) {
     datascythe::EraseConfig config;
