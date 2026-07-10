@@ -10,8 +10,8 @@ namespace datascythe {
 
 using SecureEraseProgressCallback = std::function<bool(int percent, const std::string& status)>;
 
-/// Hardware-assisted secure erase (ATA SECURITY ERASE / NVMe Sanitize).
-/// May succeed only when the device is not frozen and the OS grants privileged access.
+
+
 class ISecureErase {
 public:
     virtual ~ISecureErase() = default;
@@ -23,4 +23,4 @@ public:
 
 std::unique_ptr<ISecureErase> create_secure_erase();
 
-}  // namespace datascythe
+}  
