@@ -72,4 +72,4 @@ std::string PatternGenerator::pass_label(int pattern_type,
     return "fixed";
 }
 
-}  // namespace datascythe
+}  
