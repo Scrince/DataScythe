@@ -42,7 +42,7 @@ std::string wide_to_utf8(const wchar_t* wide) {
     return out;
 }
 
-}  // namespace
+}  
 
 std::vector<std::string> enumerate_alternate_data_streams(const std::string& file_path) {
     std::vector<std::string> streams;
@@ -60,7 +60,7 @@ std::vector<std::string> enumerate_alternate_data_streams(const std::string& fil
 
     do {
         const std::string name = wide_to_utf8(data.cStreamName);
-        // Skip the default data stream "::$DATA"
+        
         if (name.empty() || name == "::$DATA") {
             continue;
         }
@@ -77,6 +77,6 @@ std::vector<std::string> enumerate_alternate_data_streams(const std::string& fil
     return streams;
 }
 
-}  // namespace datascythe
+}  
 
 #endif
