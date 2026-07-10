@@ -90,7 +90,7 @@ QString mode_description(EraseMode mode) {
     return {};
 }
 
-}  // namespace
+}  
 
 MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     setWindowTitle("DataScythe - Secure Drive Eraser");
@@ -1111,4 +1111,4 @@ void MainWindow::set_busy(bool busy) {
     clone_cancel_button_->setEnabled(busy);
 }
 
-}  // namespace datascythe::gui
+}  
