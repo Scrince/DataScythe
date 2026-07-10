@@ -33,7 +33,7 @@ QString drive_type_label(DriveType type) {
     }
 }
 
-}  // namespace
+}  
 
 DriveTableModel::DriveTableModel(QObject* parent) : QAbstractTableModel(parent) {}
 
@@ -129,4 +129,4 @@ QVariant DriveTableModel::headerData(int section, Qt::Orientation orientation, i
     }
 }
 
-}  // namespace datascythe::gui
+}  
