@@ -324,12 +324,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<ISecureErase> create_secure_erase() {
     return std::make_unique<WindowsSecureErase>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
