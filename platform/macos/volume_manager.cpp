@@ -28,12 +28,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<IVolumeManager> create_volume_manager() {
     return std::make_unique<MacVolumeManager>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
