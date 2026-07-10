@@ -5,7 +5,7 @@
 
 namespace datascythe {
 
-/// Collects file paths for shredding. Skips symlinks by default.
+
 class PathCollector {
 public:
     static std::vector<std::string> collect_files(const std::string& path, bool recursive,
@@ -13,4 +13,4 @@ public:
                                                   std::string& error_out);
 };
 
-}  // namespace datascythe
+}  
