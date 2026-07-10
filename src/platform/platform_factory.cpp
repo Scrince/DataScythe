@@ -17,6 +17,6 @@ std::unique_ptr<IVolumeManager> create_volume_manager() { return nullptr; }
 std::unique_ptr<ISecureErase> create_secure_erase() { return nullptr; }
 std::unique_ptr<IPreflightChecker> create_preflight_checker() { return nullptr; }
 
-}  // namespace datascythe
+}  
 
 #endif
