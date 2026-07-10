@@ -102,4 +102,4 @@ void ConfirmationDialog::on_accept() {
     accept();
 }
 
-}  // namespace datascythe::gui
+}  
