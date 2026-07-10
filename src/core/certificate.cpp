@@ -32,7 +32,7 @@ std::string timestamp_now() {
     return oss.str();
 }
 
-}  // namespace
+}  
 
 std::string sanitize_target_for_filename(const std::string& target) {
     std::string sanitized;
@@ -235,4 +235,4 @@ bool export_certificate(const ErasureCertificate& cert, const std::string& path,
     return true;
 }
 
-}  // namespace datascythe
+}  
