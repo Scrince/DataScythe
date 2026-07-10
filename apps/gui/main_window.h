@@ -123,4 +123,4 @@ private:
     bool has_clone_report_ = false;
 };
 
-}  // namespace datascythe::gui
+}  
