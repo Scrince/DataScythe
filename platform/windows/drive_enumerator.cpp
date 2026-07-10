@@ -125,7 +125,7 @@ bool query_drive(int index, DriveInfo& info, int system_disk_number) {
         info.is_removable = desc->RemovableMedia != 0;
         info.type = classify_bus(desc->BusType, info.is_removable);
 
-        // Trim whitespace from identifiers.
+        
         auto trim = [](std::string& s) {
             while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) {
                 s.erase(s.begin());
@@ -277,12 +277,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<IDriveEnumerator> create_drive_enumerator() {
     return std::make_unique<WindowsDriveEnumerator>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
