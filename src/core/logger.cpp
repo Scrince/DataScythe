@@ -21,7 +21,7 @@ std::string timestamp_now() {
     return oss.str();
 }
 
-}  // namespace
+}  
 
 void Logger::info(const std::string& message) { append("INFO", message); }
 void Logger::warning(const std::string& message) { append("WARN", message); }
@@ -32,7 +32,7 @@ void Logger::begin_session(const std::string& device_id, const std::string& mode
     session_start_ = std::chrono::system_clock::now();
     session_device_ = device_id;
     session_mode_ = mode_summary;
-    append("INFO", "Session started for " + device_id + " mode=" + mode_summary);
+    append_unlocked("INFO", "Session started for " + device_id + " mode=" + mode_summary);
 }
 
 void Logger::end_session(bool success) {
@@ -40,9 +40,15 @@ void Logger::end_session(bool success) {
     const auto end = std::chrono::system_clock::now();
     const auto seconds =
         std::chrono::duration_cast<std::chrono::seconds>(end - session_start_).count();
-    append(success ? "INFO" : "ERROR",
-           std::string("Session ended status=") + (success ? "success" : "failure") +
-               " duration_s=" + std::to_string(seconds));
+    append_unlocked(success ? "INFO" : "ERROR",
+                    std::string("Session ended status=") +
+                        (success ? "success" : "failure") +
+                        " duration_s=" + std::to_string(seconds));
+}
+
+std::vector<std::string> Logger::entries() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return entries_;
 }
 
 bool Logger::export_to_file(const std::string& path, std::string& error_out) const {
@@ -65,7 +71,11 @@ void Logger::clear() {
 
 void Logger::append(const std::string& level, const std::string& message) {
     std::lock_guard<std::mutex> lock(mutex_);
+    append_unlocked(level, message);
+}
+
+void Logger::append_unlocked(const std::string& level, const std::string& message) {
     entries_.push_back("[" + timestamp_now() + "] [" + level + "] " + message);
 }
 
-}  // namespace datascythe
+}  
