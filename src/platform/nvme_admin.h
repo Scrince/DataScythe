@@ -9,14 +9,14 @@
 
 namespace datascythe::nvme {
 
-/// NVMe Admin command opcodes.
+
 inline constexpr std::uint8_t kOpcodeGetLogPage = 0x02;
 inline constexpr std::uint8_t kOpcodeSanitize = 0x84;
 
-/// Sanitize Status log identifier.
+
 inline constexpr std::uint8_t kLogIdSanitizeStatus = 0x81;
 
-/// Sanitize action (CDW10 bits 2:0).
+
 enum class SanitizeAction : std::uint32_t {
     ExitFailureMode = 1,
     BlockErase = 2,
@@ -32,7 +32,7 @@ enum class SanitizePollState {
 };
 
 struct SanitizeStatusLog {
-    std::uint16_t progress = 0;  // 0xFFFF = complete
+    std::uint16_t progress = 0;  
     std::uint8_t status = 0;
 };
 
@@ -82,7 +82,7 @@ inline PassthroughCommand make_sanitize_status_log_command(std::uint64_t buffer_
     cmd.nsid = 0xFFFFFFFFU;
     cmd.addr = buffer_addr;
     cmd.data_len = buffer_len;
-    // LID = 0x81, NUMDL = (len/4)-1 in bits 31:16
+    
     const std::uint32_t numd = (buffer_len / sizeof(std::uint32_t)) - 1U;
     cmd.cdw10 = kLogIdSanitizeStatus | (numd << 16);
     cmd.timeout_ms = 5000;
@@ -93,7 +93,7 @@ inline int sanitize_progress_percent(std::uint16_t sprog) {
     if (sprog == 0xFFFF) {
         return 100;
     }
-    // SPROG is 16-bit value where 0xFFFF indicates completion.
+    
     return static_cast<int>((static_cast<std::uint32_t>(sprog) * 100U) / 0xFFFEU);
 }
 
@@ -101,7 +101,7 @@ inline SanitizePollState interpret_status_log(const SanitizeStatusLog& log) {
     if (log.progress == 0xFFFF) {
         return SanitizePollState::Complete;
     }
-    // SSTAT bit 0: sanitize completed; bit 1: global data erased
+    
     if ((log.status & 0x06) != 0 && log.progress == 0) {
         return SanitizePollState::Failed;
     }
@@ -110,7 +110,7 @@ inline SanitizePollState interpret_status_log(const SanitizeStatusLog& log) {
 
 using SanitizePollCallback = std::function<bool(int percent, const std::string& status)>;
 
-/// Generic polling loop; platform code calls poll_once repeatedly.
+
 inline SanitizePollState wait_for_sanitize_completion(
     const std::function<bool(SanitizeStatusLog&, std::string&)>& poll_once,
     SanitizePollCallback progress, std::chrono::seconds timeout, std::string& error_out) {
@@ -146,4 +146,4 @@ inline SanitizePollState wait_for_sanitize_completion(
     return SanitizePollState::Timeout;
 }
 
-}  // namespace datascythe::nvme
+}  
