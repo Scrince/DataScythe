@@ -43,7 +43,7 @@ public:
 
 std::unique_ptr<IPreflightChecker> create_preflight_checker();
 
-/// Format preflight output for display.
+
 std::string format_preflight_report(const PreflightResult& result);
 
-}  // namespace datascythe
+}  
