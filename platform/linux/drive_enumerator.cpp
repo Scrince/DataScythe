@@ -88,12 +88,12 @@ public:
     }
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<IDriveEnumerator> create_drive_enumerator() {
     return std::make_unique<LinuxDriveEnumerator>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
