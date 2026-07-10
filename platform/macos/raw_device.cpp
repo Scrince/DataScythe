@@ -159,12 +159,12 @@ private:
     RawTargetType target_type_ = RawTargetType::Unknown;
 };
 
-}  // namespace
+}  
 
 std::unique_ptr<IRawDevice> create_raw_device() {
     return std::make_unique<MacRawDevice>();
 }
 
-}  // namespace datascythe
+}  
 
 #endif
