@@ -1,0 +1,44 @@
+============================================================
+                  DATASCYTHE CLONE REPORT
+============================================================
+
+Generated:              2026-07-11 18:12:51 UTC
+Status:                 SUCCESS
+Result:                 Drive clone completed and verified byte-for-byte
+Verification requested: yes
+Target tail wipe:       unchanged
+Verification result:    PASSED
+Source SHA-256:         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+Target SHA-256:         aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+Source Drive
+------------
+Source path:       source
+Source index:      -1
+Source model:      source-model
+Source vendor:     N/A
+Source serial:     source-serial
+Source size bytes: 4096
+Source system:     no
+Source removable:  no
+Source read-only:  no
+
+Target Drive
+------------
+Target path:       target
+Target index:      -1
+Target model:      target-model
+Target vendor:     N/A
+Target serial:     target-serial
+Target size bytes: 4096
+Target system:     no
+Target removable:  no
+Target read-only:  no
+
+Limitations:
+  - Covers OS-addressable bytes from source offset 0 through source_size - 1.
+  - Target bytes beyond source_size are not modified when target is larger.
+  - A live source may change during acquisition unless externally write-blocked.
+  - Firmware-hidden/remapped regions are outside user-mode raw I/O visibility.
+
+============================================================
