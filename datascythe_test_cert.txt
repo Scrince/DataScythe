@@ -1,0 +1,24 @@
+============================================================
+              DATASCYTHE ERASURE CERTIFICATE
+============================================================
+
+Target:              test-target
+Mode:                Quick zero-fill
+Passes:              1
+Random passes:       no
+Final zero pass:     no
+Partition metadata:  skipped
+Verification:        disabled
+Started:             
+Completed:           
+Status:              SUCCESS
+Result:              done
+Content SHA-256:     
+
+Limitations:
+  - Covers OS-addressable regions only.
+  - SSD wear-leveling, HPA/DCO, and firmware areas may retain data.
+  - Backups and remote copies are outside scope.
+  - Content SHA-256 is a tamper-evidence digest, not an authority signature.
+
+============================================================
