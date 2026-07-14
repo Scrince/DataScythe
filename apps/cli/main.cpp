@@ -38,18 +38,22 @@ void print_usage(const char* argv0) {
                 "  --recursive       Recurse into subdirectories (folder mode)\n"
                 "  --no-recursive    Do not recurse (folder mode)\n"
                 "  --verify          Read back sample sectors after erase\n"
+                "  --verify-mode M   sparse | full | percent (default: sparse)\n"
+                "  --verify-percent N  Percent of 512-byte samples for percent mode\n"
                 "  --no-partition-wipe  Skip MBR/GPT metadata wipe on block devices\n"
                 "  --no-ads          Skip NTFS alternate data streams (file/folder modes)\n"
                 "  --certificate P   Export erasure certificate to path P on success\n"
+                "  --dry-run         Show resolved plan and pre-flight results only\n"
+                "  --confirm-target P  Required with --yes for drive-level erase targets\n"
                 "  --yes             Skip interactive confirmation\n"
                 "  --version         Show version information\n"
                 "  --help            Show this help\n\n"
                 "Examples:\n"
                 "  %s --list-drives\n"
-                "  %s --mode quick --yes \\\\.\\PhysicalDrive2\n"
+                "  %s --mode quick --yes --confirm-target \\\\.\\PhysicalDrive2 \\\\.\\PhysicalDrive2\n"
                 "  %s --mode files --remove file1.txt file2.doc\n"
                 "  %s --mode folder --recursive C:\\temp\\shred_me\n"
-                "  %s --mode ssd-secure --yes \\\\.\\PhysicalDrive1\n",
+                "  %s --mode ssd-secure --yes --confirm-target \\\\.\\PhysicalDrive1 \\\\.\\PhysicalDrive1\n",
                 argv0, argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
@@ -168,6 +172,93 @@ bool parse_pass_count(const char* text, std::size_t& passes_out, std::string& er
     }
 }
 
+bool parse_percent(const char* text, double& percent_out, std::string& error_out) {
+    try {
+        std::size_t parsed = 0;
+        const double value = std::stod(text, &parsed);
+        if (parsed != std::strlen(text) || value <= 0.0 || value > 100.0) {
+            error_out = "Verification percent must be greater than 0 and no more than 100.";
+            return false;
+        }
+        percent_out = value;
+        return true;
+    } catch (const std::exception&) {
+        error_out = "Verification percent must be a number.";
+        return false;
+    }
+}
+
+bool parse_verification_mode(const std::string& text, datascythe::EraseConfig& config,
+                             std::string& error_out) {
+    config.verify_after_erase = true;
+    if (text == "sparse") {
+        config.verification_mode = datascythe::VerificationMode::Sparse;
+        return true;
+    }
+    if (text == "full") {
+        config.verification_mode = datascythe::VerificationMode::Full;
+        return true;
+    }
+    if (text == "percent") {
+        config.verification_mode = datascythe::VerificationMode::Percent;
+        return true;
+    }
+    error_out = "Verification mode must be sparse, full, or percent.";
+    return false;
+}
+
+std::string verification_mode_name(const datascythe::EraseConfig& config) {
+    switch (config.verification_mode) {
+        case datascythe::VerificationMode::Sparse:
+            return "sparse";
+        case datascythe::VerificationMode::Full:
+            return "full";
+        case datascythe::VerificationMode::Percent:
+            return "percent:" + std::to_string(config.verification_percent);
+    }
+    return "sparse";
+}
+
+bool drive_level_mode(datascythe::EraseMode mode) {
+    return mode == datascythe::EraseMode::FullDeviceWipe ||
+           mode == datascythe::EraseMode::QuickZeroFill ||
+           mode == datascythe::EraseMode::ShredVolume ||
+           mode == datascythe::EraseMode::SsdSecureErase;
+}
+
+bool target_confirmed(const std::string& target, const std::vector<std::string>& confirmations) {
+    for (const auto& confirmation : confirmations) {
+        if (confirmation == target) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void print_plan(const datascythe::EraseConfig& config, const std::vector<std::string>& targets,
+                const std::vector<std::string>& resolved_targets, bool assume_yes,
+                const std::string& certificate_path) {
+    std::printf("DataScythe dry run plan\n");
+    std::printf("=======================\n");
+    std::printf("Mode:                 %s\n", datascythe::mode_to_string(config.mode).c_str());
+    std::printf("Passes:               %zu\n", config.pass_count);
+    std::printf("Random passes:        %s\n", config.use_random_passes ? "yes" : "no");
+    std::printf("Final zero pass:      %s\n", config.final_zero_pass ? "yes" : "no");
+    std::printf("Partition metadata:   %s\n", config.wipe_partition_metadata ? "wipe" : "skip");
+    std::printf("Verification:         %s\n",
+                config.verify_after_erase ? verification_mode_name(config).c_str() : "disabled");
+    std::printf("Interactive prompt:   %s\n", assume_yes ? "skipped by --yes" : "required");
+    std::printf("Certificate:          %s\n",
+                certificate_path.empty() ? "not requested" : certificate_path.c_str());
+    std::printf("\nTargets:\n");
+    for (std::size_t i = 0; i < targets.size(); ++i) {
+        std::printf("  - requested: %s\n", targets[i].c_str());
+        if (i < resolved_targets.size() && resolved_targets[i] != targets[i]) {
+            std::printf("    resolved:  %s\n", resolved_targets[i].c_str());
+        }
+    }
+}
+
 std::string resolve_volume_target(const std::string& device_path) {
     std::string error;
     auto enumerator = datascythe::create_drive_enumerator();
@@ -208,8 +299,10 @@ bool is_system_target(const std::string& path) {
 int main(int argc, char* argv[]) {
     datascythe::EraseConfig config;
     bool assume_yes = false;
+    bool dry_run = false;
     std::string certificate_path;
     std::vector<std::string> targets;
+    std::vector<std::string> confirm_targets;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -257,6 +350,32 @@ int main(int argc, char* argv[]) {
             config.verify_after_erase = true;
             continue;
         }
+        if (arg == "--verify-mode") {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--verify-mode requires a value.\n");
+                return 1;
+            }
+            std::string parse_error;
+            if (!parse_verification_mode(argv[++i], config, parse_error)) {
+                std::fprintf(stderr, "%s\n", parse_error.c_str());
+                return 1;
+            }
+            continue;
+        }
+        if (arg == "--verify-percent") {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--verify-percent requires a value.\n");
+                return 1;
+            }
+            std::string parse_error;
+            if (!parse_percent(argv[++i], config.verification_percent, parse_error)) {
+                std::fprintf(stderr, "%s\n", parse_error.c_str());
+                return 1;
+            }
+            config.verify_after_erase = true;
+            config.verification_mode = datascythe::VerificationMode::Percent;
+            continue;
+        }
         if (arg == "--no-partition-wipe") {
             config.wipe_partition_metadata = false;
             continue;
@@ -267,6 +386,18 @@ int main(int argc, char* argv[]) {
         }
         if (arg == "--certificate" && i + 1 < argc) {
             certificate_path = argv[++i];
+            continue;
+        }
+        if (arg == "--dry-run") {
+            dry_run = true;
+            continue;
+        }
+        if (arg == "--confirm-target") {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "--confirm-target requires a target path.\n");
+                return 1;
+            }
+            confirm_targets.push_back(argv[++i]);
             continue;
         }
         if (arg == "--passes") {
@@ -314,6 +445,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    if (!dry_run && assume_yes && drive_level_mode(config.mode)) {
+        for (const auto& target : targets) {
+            if (!target_confirmed(target, confirm_targets)) {
+                std::fprintf(stderr,
+                             "--yes for drive-level modes requires --confirm-target %s\n",
+                             target.c_str());
+                return 1;
+            }
+        }
+    }
+
     auto checker = datascythe::create_preflight_checker();
     if (checker) {
         for (const auto& target : targets) {
@@ -324,6 +466,19 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
         }
+    }
+
+    std::vector<std::string> resolved_targets;
+    resolved_targets.reserve(targets.size());
+    for (const auto& target : targets) {
+        resolved_targets.push_back(
+            config.mode == datascythe::EraseMode::ShredVolume ? resolve_volume_target(target)
+                                                               : target);
+    }
+
+    if (dry_run) {
+        print_plan(config, targets, resolved_targets, assume_yes, certificate_path);
+        return 0;
     }
 
     if (!assume_yes) {
