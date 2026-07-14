@@ -196,6 +196,11 @@ When --yes is present:
 
   Skip stdin confirmation entirely. Pre-flight checks still run.
 
+  For drive-level modes (full, quick, volume, ssd-secure), --yes is accepted
+  only when each requested target also appears in a matching --confirm-target
+  argument. This binds unattended scripts to the literal target path they are
+  about to operate on. --dry-run is exempt because it performs no writes.
+
 
 Operations Without Typed Phrase
 -------------------------------
@@ -255,9 +260,9 @@ Automation Hazard
 -----------------
 
 --yes exists for scripted maintenance on confirmed maintenance windows. Scripts
-must hard-code target paths and mode flags explicitly. Combining --yes with
-wrong drive indices is equivalent to bypassing the only interactive safety gate
-in the CLI.
+must hard-code target paths, matching --confirm-target values, and mode flags
+explicitly. Combining --yes with wrong drive indices is equivalent to bypassing
+the only interactive safety gate in the CLI.
 
 There is no DataScythe equivalent of a stored credential or keyfile. Each run
 requires fresh acknowledgment unless --yes is supplied.

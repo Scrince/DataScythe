@@ -85,6 +85,8 @@ bool export_clone_report(const CloneReport& report, const std::string& path,
     out << "Status:                 " << (report.result.success ? "SUCCESS" : "FAILURE") << '\n';
     out << "Result:                 " << report.result.message << '\n';
     out << "Verification requested: " << (report.config.verify_after_clone ? "yes" : "no") << '\n';
+    out << "Target tail wipe:       " << (report.config.wipe_target_tail ? "zero-fill" : "unchanged")
+        << '\n';
     out << "Verification result:    "
         << (report.result.verification_passed ? "PASSED" : "FAILED") << '\n';
     out << "Source SHA-256:         "
@@ -109,7 +111,9 @@ bool export_clone_report(const CloneReport& report, const std::string& path,
 
     out << "\nLimitations:\n";
     out << "  - Covers OS-addressable bytes from source offset 0 through source_size - 1.\n";
-    out << "  - Target bytes beyond source_size are not modified when target is larger.\n";
+    out << "  - Target bytes beyond source_size are "
+        << (report.config.wipe_target_tail ? "zero-filled when target is larger.\n"
+                                           : "not modified when target is larger.\n");
     out << "  - A live source may change during acquisition unless externally write-blocked.\n";
     out << "  - Firmware-hidden/remapped regions are outside user-mode raw I/O visibility.\n";
 

@@ -1,5 +1,7 @@
 #include "core/certificate.h"
 
+#include "core/sha256.h"
+
 #include <chrono>
 #include <cerrno>
 #include <cstdlib>
@@ -30,6 +32,56 @@ std::string timestamp_now() {
     std::ostringstream oss;
     oss << std::put_time(&local_tm, "%Y-%m-%d %H:%M:%S UTC");
     return oss.str();
+}
+
+std::string certificate_body(const ErasureCertificate& cert, bool include_digest) {
+    std::ostringstream out;
+    out << "============================================================\n";
+    out << "              DATASCYTHE ERASURE CERTIFICATE\n";
+    out << "============================================================\n\n";
+    out << "Target:              " << cert.target << '\n';
+    out << "Mode:                " << cert.mode_name << '\n';
+    out << "Passes:              " << cert.pass_count << '\n';
+    out << "Random passes:       " << (cert.random_passes ? "yes" : "no") << '\n';
+    out << "Final zero pass:     " << (cert.final_zero_pass ? "yes" : "no") << '\n';
+    out << "Partition metadata:  " << (cert.partition_metadata_wipe ? "wiped" : "skipped")
+        << '\n';
+    out << "Verification:        " << (cert.verification_enabled ? "enabled" : "disabled")
+        << '\n';
+    if (cert.verification_enabled) {
+        out << "Verification result: " << (cert.verification_passed ? "PASSED" : "FAILED")
+            << '\n';
+    }
+    out << "Started:             " << cert.started_at << '\n';
+    out << "Completed:           " << cert.completed_at << '\n';
+    out << "Status:              " << (cert.success ? "SUCCESS" : "FAILURE") << '\n';
+    out << "Result:              " << cert.result_message << '\n';
+    if (include_digest) {
+        out << "Content SHA-256:     " << cert.content_sha256 << '\n';
+    }
+
+    if (!cert.warnings.empty()) {
+        out << "\nWarnings:\n";
+        for (const auto& warning : cert.warnings) {
+            out << "  - " << warning << '\n';
+        }
+    }
+
+    out << "\nLimitations:\n";
+    out << "  - Covers OS-addressable regions only.\n";
+    out << "  - SSD wear-leveling, HPA/DCO, and firmware areas may retain data.\n";
+    out << "  - Backups and remote copies are outside scope.\n";
+    out << "  - Content SHA-256 is a tamper-evidence digest, not an authority signature.\n";
+
+    if (!cert.log_excerpt.empty()) {
+        out << "\nLog excerpt:\n";
+        for (const auto& line : cert.log_excerpt) {
+            out << line << '\n';
+        }
+    }
+
+    out << "\n============================================================\n";
+    return out.str();
 }
 
 }  
@@ -175,6 +227,8 @@ ErasureCertificate build_certificate(const std::string& target, const EraseConfi
     } else {
         cert.started_at = cert.completed_at;
     }
+    const std::string unsigned_body = certificate_body(cert, false);
+    cert.content_sha256 = sha256_hex(unsigned_body.data(), unsigned_body.size());
 
     return cert;
 }
@@ -191,47 +245,7 @@ bool export_certificate(const ErasureCertificate& cert, const std::string& path,
         return false;
     }
 
-    out << "============================================================\n";
-    out << "              DATASCYTHE ERASURE CERTIFICATE\n";
-    out << "============================================================\n\n";
-    out << "Target:              " << cert.target << '\n';
-    out << "Mode:                " << cert.mode_name << '\n';
-    out << "Passes:              " << cert.pass_count << '\n';
-    out << "Random passes:       " << (cert.random_passes ? "yes" : "no") << '\n';
-    out << "Final zero pass:     " << (cert.final_zero_pass ? "yes" : "no") << '\n';
-    out << "Partition metadata:  " << (cert.partition_metadata_wipe ? "wiped" : "skipped")
-        << '\n';
-    out << "Verification:        " << (cert.verification_enabled ? "enabled" : "disabled")
-        << '\n';
-    if (cert.verification_enabled) {
-        out << "Verification result: " << (cert.verification_passed ? "PASSED" : "FAILED")
-            << '\n';
-    }
-    out << "Started:             " << cert.started_at << '\n';
-    out << "Completed:           " << cert.completed_at << '\n';
-    out << "Status:              " << (cert.success ? "SUCCESS" : "FAILURE") << '\n';
-    out << "Result:              " << cert.result_message << '\n';
-
-    if (!cert.warnings.empty()) {
-        out << "\nWarnings:\n";
-        for (const auto& warning : cert.warnings) {
-            out << "  - " << warning << '\n';
-        }
-    }
-
-    out << "\nLimitations:\n";
-    out << "  - Covers OS-addressable regions only.\n";
-    out << "  - SSD wear-leveling, HPA/DCO, and firmware areas may retain data.\n";
-    out << "  - Backups and remote copies are outside scope.\n";
-
-    if (!cert.log_excerpt.empty()) {
-        out << "\nLog excerpt:\n";
-        for (const auto& line : cert.log_excerpt) {
-            out << line << '\n';
-        }
-    }
-
-    out << "\n============================================================\n";
+    out << certificate_body(cert, true);
     return true;
 }
 

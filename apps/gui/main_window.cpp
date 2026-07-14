@@ -228,12 +228,14 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent) {
     auto* clone_controls = new QHBoxLayout();
     clone_verify_check_ = new QCheckBox("Verify byte-for-byte after clone", this);
     clone_verify_check_->setChecked(true);
+    clone_wipe_tail_check_ = new QCheckBox("Zero-fill extra target space", this);
     clone_button_ = new QPushButton("Clone source to target", this);
     clone_cancel_button_ = new QPushButton("Cancel", this);
     clone_cancel_button_->setEnabled(false);
     clone_report_button_ = new QPushButton("Export clone report", this);
     clone_report_button_->setEnabled(false);
     clone_controls->addWidget(clone_verify_check_);
+    clone_controls->addWidget(clone_wipe_tail_check_);
     clone_controls->addStretch();
     clone_controls->addWidget(clone_report_button_);
     clone_controls->addWidget(clone_button_);
@@ -505,9 +507,8 @@ bool MainWindow::confirm_clone_operation(const DriveInfo& source, const DriveInf
         "\nto\n" + QString::fromStdString(target.device_path) +
         "\n\nAll existing data on the target drive will be overwritten.";
     if (target.size_bytes > source.size_bytes) {
-        description +=
-            "\n\nThe target is larger than the source; bytes beyond the source size will be left "
-            "unchanged.";
+        description += "\n\nThe target is larger than the source. Extra target space will be ";
+        description += clone_wipe_tail_check_->isChecked() ? "zero-filled." : "left unchanged.";
     }
     if (source.is_system_drive) {
         description +=
@@ -796,6 +797,7 @@ void MainWindow::start_clone_operation() {
 
     DriveCloneConfig config;
     config.verify_after_clone = clone_verify_check_->isChecked();
+    config.wipe_target_tail = clone_wipe_tail_check_->isChecked();
     run_clone_job(*source, *target, config);
 }
 

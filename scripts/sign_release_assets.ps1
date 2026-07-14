@@ -26,7 +26,17 @@ function Ensure-ReleaseKey {
     }
     & (Join-Path $PSScriptRoot "hide_gnupg_release.ps1") | Out-Null
 
-    $keyList = & $gpg --homedir $gpgHome --list-secret-keys --keyid-format long 2>&1 | Out-String
+    $oldErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $keyList = & $gpg --homedir $gpgHome --list-secret-keys --keyid-format long 2>&1 | Out-String
+        $keyListExitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $oldErrorActionPreference
+    }
+    if ($keyListExitCode -ne 0) {
+        throw "Unable to list release signing keys."
+    }
     if ($keyList -notmatch "DataScythe Release Signing") {
         Write-Host "[RUN] Generating DataScythe release signing key in .gnupg-release"
         Invoke-Gpg @("--homedir", $gpgHome, "--batch", "--generate-key", "scripts/gpg-keygen-batch.txt")

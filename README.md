@@ -85,6 +85,7 @@ DataScythe supports:
 - GUI byte-for-byte physical drive cloning with optional full verification
 - SHA-256 clone evidence hashes and exportable clone reports
 - Exportable GUI analytics reports
+- CLI dry-run planning for destructive operations
 - Full-device overwrite
 - Quick zero-fill
 - Mounted volume shredding
@@ -94,7 +95,9 @@ DataScythe supports:
 - GNU shred-inspired overwrite pass scheduling
 - MBR/GPT metadata wipe on block devices
 - Optional sparse post-erase verification
+- Optional full or percentage-based post-erase verification from the CLI
 - Erasure certificate export
+- Erasure certificate content SHA-256 digest for tamper evidence
 - Hardware SSD secure erase paths where supported by the platform and device
 
 ## Command-Line Usage
@@ -115,7 +118,20 @@ Run without the interactive prompt only when the target has already been
 validated:
 
 ```bash
-sudo datascythe --mode quick --yes /dev/sdX
+sudo datascythe --mode quick --yes --confirm-target /dev/sdX /dev/sdX
+```
+
+Preview a run without writing to the target:
+
+```bash
+datascythe --mode files --dry-run ./staged-directory
+```
+
+Request stronger verification:
+
+```bash
+datascythe --mode quick --verify-mode full --yes --confirm-target /dev/sdX /dev/sdX
+datascythe --mode full --verify-percent 25 --yes --confirm-target /dev/sdX /dev/sdX
 ```
 
 Shred files, verify samples, and export a certificate:
@@ -134,7 +150,7 @@ Windows examples use physical drive paths such as:
 
 ```powershell
 datascythe-cli.exe --list-drives
-datascythe-cli.exe --mode quick --yes \\.\PhysicalDrive2
+datascythe-cli.exe --mode quick --yes --confirm-target \\.\PhysicalDrive2 \\.\PhysicalDrive2
 ```
 
 ## Building From Source

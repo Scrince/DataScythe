@@ -114,6 +114,59 @@ bool DriveCloneEngine::copy_bytes(std::uint64_t total_size, std::size_t total_pa
     return true;
 }
 
+bool DriveCloneEngine::wipe_tail(std::uint64_t source_size, std::uint64_t target_size,
+                                 std::size_t pass, std::size_t total_passes,
+                                 std::uint64_t overall_base, std::uint64_t overall_total,
+                                 ProgressCallback progress, EraseResult& result) {
+    if (target_size <= source_size) {
+        return true;
+    }
+
+    std::vector<std::uint8_t> zeros(kBufferSize, 0);
+    std::uint64_t offset = source_size;
+    const std::uint64_t tail_size = target_size - source_size;
+    std::uint64_t tail_done = 0;
+
+    while (offset < target_size) {
+        if (cancel_requested_.load()) {
+            result.success = false;
+            result.error = EraseError::Cancelled;
+            result.message = "Drive clone tail wipe cancelled by user";
+            return false;
+        }
+
+        const auto chunk = static_cast<std::size_t>(
+            std::min<std::uint64_t>(zeros.size(), target_size - offset));
+        std::string error;
+        if (!target_->write_at(offset, zeros.data(), chunk, error)) {
+            result.success = false;
+            result.error = EraseError::IoError;
+            result.message =
+                "Tail wipe failed at offset " + std::to_string(offset) + ": " + error;
+            return false;
+        }
+
+        offset += chunk;
+        tail_done += chunk;
+        report_progress("wipe target tail", pass, total_passes, tail_done, tail_size,
+                        overall_base + tail_done, overall_total, progress);
+    }
+
+    std::string flush_error;
+    if (!target_->flush(flush_error)) {
+        result.success = false;
+        result.error = EraseError::IoError;
+        result.message = "Target flush failed after tail wipe: " + flush_error;
+        result.warnings.push_back(result.message);
+        if (logger_) {
+            logger_->warning(result.warnings.back());
+        }
+        return false;
+    }
+    result.warnings.push_back("Target bytes beyond source size were zero-filled.");
+    return true;
+}
+
 bool DriveCloneEngine::verify_bytes(std::uint64_t total_size, ProgressCallback progress,
                                     EraseResult& result) {
     std::vector<std::uint8_t> source_buffer(kBufferSize);
@@ -232,7 +285,7 @@ EraseResult DriveCloneEngine::clone(const std::string& source_path,
         result.message = "Target is smaller than source";
         return result;
     }
-    if (target_size > source_size) {
+    if (target_size > source_size && !config.wipe_target_tail) {
         result.warnings.push_back(
             "Target is larger than source; bytes beyond the source size are left unchanged.");
     }
@@ -249,9 +302,13 @@ EraseResult DriveCloneEngine::clone(const std::string& source_path,
         logger_->info("Clone target bytes=" + std::to_string(target_size));
     }
 
-    const std::size_t total_passes = config.verify_after_clone ? 2 : 1;
+    const std::size_t total_passes =
+        1 + (config.wipe_target_tail && target_size > source_size ? 1 : 0) +
+        (config.verify_after_clone ? 1 : 0);
     std::uint64_t overall_total = 0;
-    if (!checked_multiply(source_size, total_passes, overall_total)) {
+    if (!checked_multiply(source_size, config.verify_after_clone ? 2 : 1, overall_total) ||
+        (config.wipe_target_tail && target_size > source_size &&
+         overall_total > std::numeric_limits<std::uint64_t>::max() - (target_size - source_size))) {
         source_->close();
         target_->close();
         result.success = false;
@@ -263,6 +320,9 @@ EraseResult DriveCloneEngine::clone(const std::string& source_path,
         }
         return result;
     }
+    if (config.wipe_target_tail && target_size > source_size) {
+        overall_total += target_size - source_size;
+    }
 
     result.success = true;
     if (!copy_bytes(source_size, total_passes, overall_total, progress, result)) {
@@ -273,6 +333,21 @@ EraseResult DriveCloneEngine::clone(const std::string& source_path,
             logger_->end_session(false);
         }
         return result;
+    }
+
+    std::size_t next_pass = 2;
+    if (config.wipe_target_tail && target_size > source_size) {
+        if (!wipe_tail(source_size, target_size, next_pass, total_passes, source_size,
+                       overall_total, progress, result)) {
+            source_->close();
+            target_->close();
+            if (logger_) {
+                logger_->error(result.message);
+                logger_->end_session(false);
+            }
+            return result;
+        }
+        ++next_pass;
     }
 
     if (config.verify_after_clone && !verify_bytes(source_size, progress, result)) {

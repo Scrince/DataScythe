@@ -49,7 +49,7 @@ GUI launch:
 CLI examples:
 
   sudo ./build/apps/cli/datascythe --list-drives
-  sudo ./build/apps/cli/datascythe --mode quick --yes /dev/sdX
+  sudo ./build/apps/cli/datascythe --mode quick --yes --confirm-target /dev/sdX /dev/sdX
 
 
 Runtime Dependencies

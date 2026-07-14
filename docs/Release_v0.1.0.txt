@@ -18,7 +18,8 @@ Highlights
 - Erasure certificate export and GUI auto-save.
 - Pre-flight checks with Administrator enforcement on Windows.
 - Typed GUI confirmation (ERASE N, SHRED FILES, SHRED FOLDER) plus final Yes/No.
-- CLI interactive YES confirmation (skippable with --yes).
+- CLI interactive YES confirmation (skippable with --yes and matching
+  --confirm-target for drive-level modes).
 - SSD hardware secure erase: NVMe Sanitize and ATA SECURITY ERASE on Windows.
 - Detached PGP release signatures and SHA256SUMS manifest.
 - Local Authenticode code-signing certificate for maintainer use.

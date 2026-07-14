@@ -54,6 +54,15 @@ void test_pass_scheduler_no_random() {
     }
 }
 
+void test_pass_scheduler_single_pass_no_random() {
+    datascythe::PassScheduler scheduler;
+    const auto schedule = scheduler.build_schedule(1, false);
+    expect_eq(schedule.size(), 1, "single-pass schedule size without random");
+    if (!schedule.empty()) {
+        expect_true(schedule.front() >= 0, "single-pass no-random schedule uses fixed pattern");
+    }
+}
+
 void test_pattern_generator_fixed() {
     datascythe::PatternGenerator generator(42);
     std::vector<std::uint8_t> buffer;
@@ -142,6 +151,8 @@ void test_export_certificate() {
     expect_true(contents.find("DATASCYTHE ERASURE CERTIFICATE") != std::string::npos,
                 "certificate header present");
     expect_true(contents.find("test-target") != std::string::npos, "certificate target in file");
+    expect_true(contents.find("Content SHA-256") != std::string::npos,
+                "certificate content digest present");
 
     std::remove(path.c_str());
 }
@@ -411,6 +422,64 @@ void test_drive_clone_engine_copies_and_verifies() {
     expect_true(progress_calls > 0, "clone reports progress");
 }
 
+void test_full_verification_counts_all_samples() {
+    std::vector<std::uint8_t> target_bytes(2048, 0xA5);
+    auto device = std::make_unique<MemoryRawDevice>("target", target_bytes);
+    datascythe::EraseEngine engine(std::move(device));
+
+    datascythe::EraseConfig config;
+    config.mode = datascythe::EraseMode::QuickZeroFill;
+    config.verify_after_erase = true;
+    config.verification_mode = datascythe::VerificationMode::Full;
+
+    const auto result = engine.erase_target("target", config, nullptr);
+    expect_true(result.success, "full verification erase succeeds");
+    expect_eq(result.verification_samples, 4, "full verification samples every 512-byte block");
+    expect_true(result.verification_bytes == 2048, "full verification byte count");
+}
+
+void test_sparse_verification_aligns_sector_flip_samples() {
+    std::vector<std::uint8_t> target_bytes(1537, 0xA5);
+    auto device = std::make_unique<MemoryRawDevice>("target", target_bytes);
+    datascythe::EraseEngine engine(std::move(device));
+
+    datascythe::EraseConfig config;
+    config.mode = datascythe::EraseMode::FullDeviceWipe;
+    config.pass_count = 30;
+    config.use_random_passes = false;
+    config.final_zero_pass = false;
+    config.verify_after_erase = true;
+    config.verification_mode = datascythe::VerificationMode::Sparse;
+    config.wipe_partition_metadata = false;
+
+    const auto result = engine.erase_target("target", config, nullptr);
+    expect_true(result.success, "sparse verification aligns sector-flip samples");
+    expect_true(result.verification_passed, "sector-flip sparse verification passes");
+}
+
+void test_drive_clone_wipes_larger_target_tail() {
+    std::vector<std::uint8_t> source_bytes(4096, 0x7B);
+    std::vector<std::uint8_t> target_bytes(8192, 0xA5);
+
+    auto source = std::make_unique<MemoryRawDevice>("source", source_bytes);
+    auto target = std::make_unique<MemoryRawDevice>("target", target_bytes);
+    const MemoryRawDevice* target_view = target.get();
+
+    datascythe::DriveCloneEngine engine(std::move(source), std::move(target));
+    datascythe::DriveCloneConfig config;
+    config.verify_after_clone = false;
+    config.wipe_target_tail = true;
+
+    const auto result = engine.clone("source", "target", config, nullptr);
+    expect_true(result.success, "drive clone with tail wipe succeeds");
+    for (std::size_t i = 0; i < source_bytes.size(); ++i) {
+        expect_true(target_view->bytes()[i] == source_bytes[i], "clone prefix matches source");
+    }
+    for (std::size_t i = source_bytes.size(); i < target_view->bytes().size(); ++i) {
+        expect_true(target_view->bytes()[i] == 0x00, "clone target tail is zero-filled");
+    }
+}
+
 void test_logger_session_does_not_deadlock_and_snapshots_entries() {
     datascythe::Logger logger;
     logger.begin_session("target", "mode");
@@ -513,6 +582,7 @@ void test_nvme_poll_complete() {
 int main() {
     test_pass_scheduler_count();
     test_pass_scheduler_no_random();
+    test_pass_scheduler_single_pass_no_random();
     test_pattern_generator_fixed();
     test_pattern_generator_random();
     test_sha256_abc();
@@ -527,6 +597,9 @@ int main() {
     test_erase_fails_on_write_error();
     test_erase_fails_on_flush_error();
     test_drive_clone_engine_copies_and_verifies();
+    test_full_verification_counts_all_samples();
+    test_sparse_verification_aligns_sector_flip_samples();
+    test_drive_clone_wipes_larger_target_tail();
     test_logger_session_does_not_deadlock_and_snapshots_entries();
     test_drive_clone_fails_on_target_flush_error();
     test_erase_rejects_overflowing_work_size();

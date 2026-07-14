@@ -69,7 +69,7 @@ DriveClone, in current unreleased source builds, copies:
   To the same offsets on the selected target physical drive
 
 Clone target bytes beyond source_size are not overwritten when the target is
-larger than the source.
+larger than the source unless the zero-fill tail option is selected.
 
 Partition metadata wipe overwrites:
 
@@ -106,12 +106,17 @@ erase result and inside exported certificates.
 Verification Boundary
 ---------------------
 
-verify_after_erase performs sparse sampling, not full-media read compare.
+verify_after_erase defaults to sparse sampling. CLI operators may request full
+verification or a deterministic percentage-based sample set.
 
-Sample geometry:
+Sparse sample geometry:
 
   Up to three 512-byte reads per target
   Offsets: 0, floor(size/2), size-512 (clamped)
+
+Full verification reads every 512-byte sample exposed by the selected target
+size. Percent verification reads a deterministic spread of approximately the
+requested percentage of 512-byte samples.
 
 Passing verification means sampled bytes matched expectation. Failing
 verification means at least one sampled byte differed or read failed.
@@ -260,9 +265,10 @@ If erase was interrupted:
 Certificate Limitations
 -----------------------
 
-Erasure certificates record what the tool reported at completion time. They are
-not cryptographically signed. They do not attest to firmware-hidden retention or
-off-device copies.
+Erasure certificates record what the tool reported at completion time and
+include a Content SHA-256 digest over the certificate body before the digest
+line is added. The digest is tamper evidence, not an authority signature.
+Certificates do not attest to firmware-hidden retention or off-device copies.
 
 
 Related Documentation

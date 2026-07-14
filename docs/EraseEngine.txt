@@ -209,7 +209,9 @@ Verification
 verify_pass(pattern_type, total_size):
 
   expected = PatternGenerator buffer for pattern_type, 512 bytes
-  Sample offsets: 0, total_size/2, total_size-512 (when size permits)
+  Sparse mode sample offsets: 0, total_size/2, total_size-512 (when size permits)
+  Full mode samples every 512-byte block exposed by size_bytes
+  Percent mode samples a deterministic spread of 512-byte blocks
   Read to_read = min(512, total_size - offset) bytes
   memcmp actual vs expected
 
@@ -288,8 +290,9 @@ DriveCloneEngine::kBufferSize = 4194304 (4 MiB)
 copy_bytes reads each source chunk and writes it to the same target offset.
 verify_bytes reads both devices back and compares every copied byte with memcmp.
 
-If target_size > source_size, the engine warns that bytes beyond source_size are
-left unchanged.
+If target_size > source_size, the engine either warns that bytes beyond
+source_size are left unchanged or zero-fills the tail when wipe_target_tail is
+enabled.
 
 Progress labels:
 

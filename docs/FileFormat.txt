@@ -119,6 +119,7 @@ The report includes:
   - Generated timestamp
   - Success/failure status and result message
   - Verification requested and verification result
+  - Target tail handling for larger clone targets
   - Source SHA-256 for bytes read during copy
   - Target SHA-256 for bytes read during verification, or N/A when unavailable
   - Source and target device identity fields
@@ -186,6 +187,7 @@ Always append:
   "Completed:           " + completed_at + LF
   "Status:              " + ("SUCCESS" | "FAILURE") + LF
   "Result:              " + result_message + LF
+  "Content SHA-256:     " + lowercase sha256 hex + LF
 
 When warnings is non-empty:
 
@@ -201,6 +203,7 @@ Always append limitations block:
   "  - Covers OS-addressable regions only." + LF
   "  - SSD wear-leveling, HPA/DCO, and firmware areas may retain data." + LF
   "  - Backups and remote copies are outside scope." + LF
+  "  - Content SHA-256 is a tamper-evidence digest, not an authority signature." + LF
 
 When log_excerpt is non-empty:
 

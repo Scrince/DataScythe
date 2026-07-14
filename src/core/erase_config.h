@@ -23,6 +23,12 @@ enum class EraseMode {
     SsdSecureErase,
 };
 
+enum class VerificationMode {
+    Sparse,
+    Full,
+    Percent,
+};
+
 
 struct FixedPattern {
     std::uint32_t value = 0;
@@ -56,6 +62,10 @@ struct EraseConfig {
 
     
     bool verify_after_erase = false;
+
+    VerificationMode verification_mode = VerificationMode::Sparse;
+
+    double verification_percent = 10.0;
 
     
     bool shred_alternate_data_streams = true;

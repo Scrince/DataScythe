@@ -24,6 +24,8 @@ const int kShredPatterns[] = {
     0,
 };
 
+constexpr int kDefaultFixedPattern = 0x000;
+
 std::size_t random_choose(std::mt19937_64& rng, std::size_t upper_exclusive) {
     if (upper_exclusive <= 1) {
         return 0;
@@ -94,9 +96,12 @@ std::vector<int> PassScheduler::build_schedule(std::size_t pass_count,
 
     const std::size_t total = pass_count;
     std::vector<int> schedule(total, 0);
+    std::size_t random_slots = include_random_passes ? random_needed : 0;
+    if (fixed.empty() && random_slots == 0) {
+        fixed.push_back(kDefaultFixedPattern);
+    }
     std::size_t fixed_count = fixed.size();
     std::size_t top = fixed_count;
-    std::size_t random_slots = include_random_passes ? random_needed : 0;
 
     for (std::size_t i = 0; i < fixed_count; ++i) {
         schedule[i] = fixed[i];

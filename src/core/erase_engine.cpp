@@ -6,6 +6,7 @@
 #include "core/pattern_generator.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <sstream>
@@ -46,6 +47,27 @@ bool effective_pass_count(std::size_t pass_count, bool final_zero_pass,
         return checked_add(passes_out, 1, passes_out);
     }
     return true;
+}
+
+std::uint64_t align_sample_offset(std::uint64_t offset, std::uint64_t sample_size) {
+    return (offset / sample_size) * sample_size;
+}
+
+std::size_t requested_verification_samples(const EraseConfig& config, std::uint64_t total_size) {
+    constexpr std::uint64_t kSampleSize = 512;
+    const std::uint64_t total_samples = (total_size + kSampleSize - 1) / kSampleSize;
+    if (config.verification_mode == VerificationMode::Full) {
+        return std::numeric_limits<std::size_t>::max();
+    }
+    if (config.verification_mode == VerificationMode::Percent) {
+        const double bounded = std::max(0.01, std::min(100.0, config.verification_percent));
+        const auto samples =
+            static_cast<std::uint64_t>(std::ceil((static_cast<double>(total_samples) * bounded) /
+                                                 100.0));
+        return static_cast<std::size_t>(
+            std::max<std::uint64_t>(1, std::min<std::uint64_t>(samples, total_samples)));
+    }
+    return 0;
 }
 
 }  
@@ -426,6 +448,7 @@ EraseResult EraseEngine::run_quick_zero(const EraseConfig& config, std::uint64_t
     }
 
     if (config.verify_after_erase) {
+        result.verification_samples = requested_verification_samples(config, total_size);
         if (!verify_pass(0x000, total_size, op, progress, result)) {
             result.success = false;
             result.error = EraseError::IoError;
@@ -497,11 +520,14 @@ EraseResult EraseEngine::run_passes(const EraseConfig& config, std::uint64_t tot
             result.warnings.push_back(
                 "Verification skipped because the final pass used random data.");
             result.verification_passed = true;
-        } else if (!verify_pass(pattern, total_size, op, progress, result)) {
-            result.success = false;
-            result.error = EraseError::IoError;
-            result.message = "Verification failed after secure erase";
-            return result;
+        } else {
+            result.verification_samples = requested_verification_samples(config, total_size);
+            if (!verify_pass(pattern, total_size, op, progress, result)) {
+                result.success = false;
+                result.error = EraseError::IoError;
+                result.message = "Verification failed after secure erase";
+                return result;
+            }
         }
     }
 
@@ -525,13 +551,38 @@ bool EraseEngine::verify_pass(int pattern_type, std::uint64_t total_size, Operat
     patterns.fill_buffer(pattern_type, expected, kSampleSize);
 
     std::vector<std::uint64_t> offsets;
-    offsets.push_back(0);
-    if (total_size > kSampleSize) {
-        offsets.push_back(total_size / 2);
-        offsets.push_back(total_size > kSampleSize ? total_size - kSampleSize : 0);
+    const std::uint64_t sample_size = kSampleSize;
+    const std::uint64_t sample_count_full = (total_size + sample_size - 1) / sample_size;
+
+    if (result.verification_samples == std::numeric_limits<std::size_t>::max()) {
+        for (std::uint64_t offset = 0; offset < total_size; offset += sample_size) {
+            offsets.push_back(offset);
+        }
+    } else if (result.verification_samples > 0) {
+        const std::uint64_t requested = static_cast<std::uint64_t>(result.verification_samples);
+        const std::uint64_t samples = std::max<std::uint64_t>(1, std::min(requested, sample_count_full));
+        if (samples == 1) {
+            offsets.push_back(0);
+        } else {
+            const std::uint64_t max_offset =
+                total_size > sample_size ? total_size - sample_size : 0;
+            for (std::uint64_t i = 0; i < samples; ++i) {
+                offsets.push_back(
+                    align_sample_offset((max_offset * i) / (samples - 1), sample_size));
+            }
+        }
+    } else {
+        offsets.push_back(0);
+        if (total_size > kSampleSize) {
+            offsets.push_back(align_sample_offset(total_size / 2, sample_size));
+            offsets.push_back(align_sample_offset(total_size - kSampleSize, sample_size));
+        }
     }
+    std::sort(offsets.begin(), offsets.end());
+    offsets.erase(std::unique(offsets.begin(), offsets.end()), offsets.end());
 
     std::size_t samples_checked = 0;
+    std::uint64_t bytes_checked = 0;
     for (const std::uint64_t offset : offsets) {
         if (cancel_requested_.load()) {
             result.success = false;
@@ -558,6 +609,7 @@ bool EraseEngine::verify_pass(int pattern_type, std::uint64_t total_size, Operat
         }
 
         ++samples_checked;
+        bytes_checked += to_read;
 
         if (progress) {
             EraseProgress prog;
@@ -574,8 +626,10 @@ bool EraseEngine::verify_pass(int pattern_type, std::uint64_t total_size, Operat
 
     result.verification_passed = true;
     result.verification_samples = samples_checked;
+    result.verification_bytes = bytes_checked;
     if (logger_) {
-        logger_->info("Verification passed (" + std::to_string(samples_checked) + " samples)");
+        logger_->info("Verification passed (" + std::to_string(samples_checked) +
+                      " samples, " + std::to_string(bytes_checked) + " bytes)");
     }
     return true;
 }

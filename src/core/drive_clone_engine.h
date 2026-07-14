@@ -14,6 +14,7 @@ namespace datascythe {
 
 struct DriveCloneConfig {
     bool verify_after_clone = true;
+    bool wipe_target_tail = false;
 };
 
 class DriveCloneEngine {
@@ -31,6 +32,9 @@ public:
 private:
     bool copy_bytes(std::uint64_t total_size, std::size_t total_passes,
                     std::uint64_t overall_total, ProgressCallback progress, EraseResult& result);
+    bool wipe_tail(std::uint64_t source_size, std::uint64_t target_size,
+                   std::size_t pass, std::size_t total_passes, std::uint64_t overall_base,
+                   std::uint64_t overall_total, ProgressCallback progress, EraseResult& result);
     bool verify_bytes(std::uint64_t total_size, ProgressCallback progress, EraseResult& result);
     void report_progress(const std::string& phase, std::size_t pass, std::size_t total_passes,
                          std::uint64_t phase_done, std::uint64_t phase_total,

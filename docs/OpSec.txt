@@ -78,7 +78,8 @@ In scope:
       properties.
 
   Script automation error:
-      --yes removes CLI confirmation. A typo in a script path is immediately
+      --yes removes CLI confirmation. Drive-level modes also require a matching
+      --confirm-target, but a typo repeated in both values is immediately
       destructive.
 
 Out of scope:
@@ -173,7 +174,8 @@ GUI:
 CLI:
 
   Avoid --yes in interactive operator workflows
-  Use --yes only in controlled automation with path literals
+  Use --yes only in controlled automation with path literals and matching
+  --confirm-target arguments
 
 See Confirmation.txt for normative phrase rules.
 

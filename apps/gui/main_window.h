@@ -89,6 +89,7 @@ private:
     QCheckBox* ads_check_ = nullptr;
     QCheckBox* export_cert_check_ = nullptr;
     QCheckBox* clone_verify_check_ = nullptr;
+    QCheckBox* clone_wipe_tail_check_ = nullptr;
     QProgressBar* progress_bar_ = nullptr;
     QLabel* status_label_ = nullptr;
     QTextEdit* log_view_ = nullptr;

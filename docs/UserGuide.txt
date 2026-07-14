@@ -360,7 +360,7 @@ GUI: select drive row, click Full-device wipe.
 
 CLI:
 
-  datascythe --mode full --yes \\.\PhysicalDrive2
+  datascythe --mode full --yes --confirm-target \\.\PhysicalDrive2 \\.\PhysicalDrive2
 
 Use --passes N, --no-random, --no-zero, --verify, --no-partition-wipe, and
 --certificate <path> to adjust behavior.
@@ -376,7 +376,7 @@ GUI: select drive, click Quick zero-fill.
 
 CLI:
 
-  datascythe --mode quick --yes \\.\PhysicalDrive2
+  datascythe --mode quick --yes --confirm-target \\.\PhysicalDrive2 \\.\PhysicalDrive2
 
 
 Secure Erase Volume
@@ -392,7 +392,7 @@ GUI: select drive, click Secure erase volume.
 
 CLI:
 
-  datascythe --mode volume --yes \\.\PhysicalDrive2
+  datascythe --mode volume --yes --confirm-target \\.\PhysicalDrive2 \\.\PhysicalDrive2
 
 The CLI resolves \\.\PhysicalDriveN to the first volume mount point when mode
 is volume.
@@ -422,12 +422,12 @@ Pipeline:
      verification is enabled, the verified target stream.
 
 GUI: open the Drive clone tab, select a source row, select a target row, leave
-Verify byte-for-byte after clone checked for forensic use, then click Clone
-source to target.
+Verify byte-for-byte after clone checked for forensic use, choose whether to
+zero-fill extra target space, then click Clone source to target.
 
-If the target is larger than the source, bytes beyond source_size are left
-unchanged. Wipe or repartition the remainder separately if policy requires a
-fully defined target state.
+If the target is larger than the source, bytes beyond source_size are either
+left unchanged or zero-filled depending on the GUI option. Use zero-fill when
+policy requires a fully defined target state.
 
 Cloning a live system drive as the source is allowed but may not be
 forensically stable because the running operating system can write to the
@@ -456,7 +456,7 @@ GUI: select drive, click SSD hardware secure erase.
 
 CLI:
 
-  datascythe --mode ssd-secure --yes \\.\PhysicalDrive1
+  datascythe --mode ssd-secure --yes --confirm-target \\.\PhysicalDrive1 \\.\PhysicalDrive1
 
 Verification after SSD secure erase reads sample sectors expecting all-zero
 bytes. Crypto erase or remapped blocks may cause verification failure even when
@@ -596,9 +596,13 @@ Options:
   --recursive       Recurse into subdirectories (folder mode)
   --no-recursive    Do not recurse (folder mode)
   --verify          Read back sample sectors after erase
+  --verify-mode M   sparse | full | percent (default: sparse)
+  --verify-percent N  Verify approximately N percent of 512-byte samples
   --no-partition-wipe  Skip MBR/GPT metadata wipe on block devices
   --no-ads          Skip NTFS alternate data streams (file/folder modes)
   --certificate P   Export erasure certificate to path P on success
+  --dry-run         Show pre-flight results and the planned operation only
+  --confirm-target P  Required with --yes for drive-level erase targets
   --yes             Skip interactive YES confirmation
   --version         Show version information
   --help            Show help
@@ -644,6 +648,8 @@ Operational Safety Rules
   7. Assume a compromised host can observe paths, filenames, and timing.
   8. For forensic clone source drives, prefer powered-off acquisition or a
      trusted write-blocked environment over live-system cloning.
+  9. For unattended drive-level CLI runs, pair --yes with --confirm-target using
+     the exact target path.
 
 See OpSec.txt and Limitations.txt for the full operational security model.
 

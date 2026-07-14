@@ -21,6 +21,7 @@ struct ErasureCertificate {
     std::string completed_at;
     bool success = false;
     std::string result_message;
+    std::string content_sha256;
     std::vector<std::string> warnings;
     std::vector<std::string> log_excerpt;
 };
