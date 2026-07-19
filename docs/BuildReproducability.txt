@@ -14,7 +14,7 @@ workspace using:
 
 The measured Windows release artifact in docs/SHA256SUMS is:
 
-  445863dffdf3ad7267cf752ceba0103bb6febc2ad72de18a764399fcc8da5d20  releases/native/windows/DataScythe-0.1.0-win64.zip
+  ea8faea135f956bb5610d888ce7940bf52c06a98d5a23dec7027a5f921be71b5  releases/native/windows/DataScythe-0.1.0-win64.zip
 
 Unit tests passed with:
 

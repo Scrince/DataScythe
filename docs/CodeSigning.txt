@@ -21,7 +21,7 @@ This document covers:
 
   - Public certificate location and inspection
   - Private key export locations (gitignored)
-  - Password file handling
+  - Empty PFX/P12 export password (no password file)
   - Signing and regeneration commands
   - Relationship to PGP release signing
 
@@ -38,7 +38,7 @@ Checked-in file:
 
 Observed thumbprint (SHA-1):
 
-  5F177B17AB42FFD65969B3B0B2D5B739D0283742
+  7B859D2C4E4301D5B41C52678D01CBF5D3D0AA15
 
 Inspect:
 
@@ -61,9 +61,7 @@ Gitignored exports:
   .gnupg-release/private-keys-v1.d/DataScythe_Local_Code_Signing_2026.pfx
   .gnupg-release/private-keys-v1.d/DataScythe_Local_Code_Signing_2026.p12
 
-Password file:
-
-  .gnupg-release/code-signing-password.txt
+PFX/P12 export password: empty (no password file).
 
 The .gnupg-release directory must remain off public mirrors. Re-apply hidden
 attribute after checkout when needed:
@@ -76,8 +74,7 @@ Sign a Binary (Maintainers)
 
 PowerShell example:
 
-  $pwd = Get-Content .gnupg-release\code-signing-password.txt | Select-Object -Last 1
-  $sec = ConvertTo-SecureString -String $pwd -Force -AsPlainText
+  $sec = [securestring]::new()
   $cert = (Get-PfxData -FilePath .gnupg-release\private-keys-v1.d\DataScythe_Local_Code_Signing_2026.pfx -Password $sec).EndEntityCertificates[0]
   Set-AuthenticodeSignature -FilePath .\releases\native\windows\DataScythe-0.1.0-win64\DataScythe.exe -Certificate $cert
 

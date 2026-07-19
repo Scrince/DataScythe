@@ -8,7 +8,8 @@ $publicCert = Join-Path $root "docs\DataScythe_Local_Code_Signing_2026.cer"
 $privateDir = Join-Path $root ".gnupg-release\private-keys-v1.d"
 $pfxPath = Join-Path $privateDir "DataScythe_Local_Code_Signing_2026.pfx"
 $p12Path = Join-Path $privateDir "DataScythe_Local_Code_Signing_2026.p12"
-$passwordFile = Join-Path $root ".gnupg-release\code-signing-password.txt"
+# X.509 always has NotAfter; use Windows practical maximum (suite-wide "no expiry")
+$never = [datetime]"9999-12-31"
 
 New-Item -ItemType Directory -Force -Path $privateDir | Out-Null
 
@@ -28,23 +29,17 @@ $cert = New-SelfSignedCertificate `
     -KeySpec Signature `
     -KeyLength 4096 `
     -HashAlgorithm SHA256 `
-    -NotAfter (Get-Date).AddYears(5)
+    -NotAfter $never
 
-$password = -join ((48..57 + 65..90 + 97..122) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
-$securePassword = ConvertTo-SecureString -String $password -Force -AsPlainText
-
-Export-Certificate -Cert $cert -FilePath $publicCert | Out-Null
-Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password $securePassword | Out-Null
-Copy-Item -LiteralPath $pfxPath -Destination $p12Path -Force
-
-@(
-    "DataScythe local code-signing export password."
-    "Store location: .gnupg-release/private-keys-v1.d/"
-    "Public certificate: docs/DataScythe_Local_Code_Signing_2026.cer"
-    ""
-    "Password:"
-    $password
-) | Set-Content -LiteralPath $passwordFile -Encoding UTF8
+try {
+    Export-Certificate -Cert $cert -FilePath $publicCert | Out-Null
+    # Empty password — same as PassMan / YellowSphere / ShadowVault / etc.
+    Export-PfxCertificate -Cert $cert -FilePath $pfxPath -Password ([securestring]::new()) | Out-Null
+    Copy-Item -LiteralPath $pfxPath -Destination $p12Path -Force
+}
+finally {
+    Remove-Item -LiteralPath "Cert:\CurrentUser\My\$($cert.Thumbprint)" -Force -ErrorAction SilentlyContinue
+}
 
 & (Join-Path $PSScriptRoot "hide_gnupg_release.ps1") | Out-Null
 
@@ -52,5 +47,5 @@ Write-Host "[PASS] Code-signing certificate created"
 Write-Host "Public:  docs/DataScythe_Local_Code_Signing_2026.cer"
 Write-Host "Private: .gnupg-release/private-keys-v1.d/DataScythe_Local_Code_Signing_2026.pfx"
 Write-Host "Private: .gnupg-release/private-keys-v1.d/DataScythe_Local_Code_Signing_2026.p12"
-Write-Host "Password file (gitignored): .gnupg-release/code-signing-password.txt"
+Write-Host "PFX password: (empty)"
 Write-Host "Thumbprint: $($cert.Thumbprint)"

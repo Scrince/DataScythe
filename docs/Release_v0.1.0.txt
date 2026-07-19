@@ -117,7 +117,7 @@ Code signing certificate
 Local maintainer Authenticode certificate (public):
 
   docs/DataScythe_Local_Code_Signing_2026.cer
-  Thumbprint: 5F177B17AB42FFD65969B3B0B2D5B739D0283742
+  Thumbprint: 7B859D2C4E4301D5B41C52678D01CBF5D3D0AA15
 
 Private exports are gitignored under .gnupg-release/. See CodeSigning.txt.
 
@@ -125,10 +125,10 @@ Private exports are gitignored under .gnupg-release/. See CodeSigning.txt.
 SHA-256 manifest
 ----------------
 
-  99842e2ff920ee5c420bac8e319a2794380224ef414b9f43accd9a32486ff716  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz
-  51086ee3e9310bf4a9e234f4f8cb2e65b487709a52dd54eaa10e2e2eb5c177e8  releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz
-  67a136b230e5cfe5dcea496a66ab022d2b646912f208eb1421a2bd93b92b3bed  releases/native/macos/DataScythe-0.1.0-macos.tar.gz
-  445863dffdf3ad7267cf752ceba0103bb6febc2ad72de18a764399fcc8da5d20  releases/native/windows/DataScythe-0.1.0-win64.zip
+  f61cc4a6969a7f5e60da02482cdd2f0f4f897de5647bbd518358eaef1e7aff9b  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz
+  04d17aee620b11108f83db9c40d56b0cbef64fe5c6305d9a2c56fd1e7c108a60  releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz
+  f5a286a25a3ecd83f5723cff94b168d47c00bc1c07c85f4da4373b4c374e77f4  releases/native/macos/DataScythe-0.1.0-macos.tar.gz
+  ea8faea135f956bb5610d888ce7940bf52c06a98d5a23dec7027a5f921be71b5  releases/native/windows/DataScythe-0.1.0-win64.zip
 
 
 Known limitations

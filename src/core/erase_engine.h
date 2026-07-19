@@ -15,10 +15,6 @@
 namespace datascythe {
 
 
-
-
-
-
 class EraseEngine {
 public:
     static constexpr std::size_t kBufferSize = 1024 * 1024;  
@@ -35,6 +31,10 @@ public:
     
     EraseResult erase_paths(const std::vector<std::string>& paths, const EraseConfig& config,
                             ProgressCallback progress);
+
+    /// Pattern that was actually written last (from the live schedule), not a rebuilt RNG schedule.
+    static int verification_pattern_for_schedule(const EraseConfig& config,
+                                                 const std::vector<int>& schedule);
 
 private:
     struct OperationContext {
@@ -55,8 +55,6 @@ private:
                                EraseResult& result);
     EraseResult run_passes(const EraseConfig& config, std::uint64_t total_size,
                            OperationContext& op, ProgressCallback progress, EraseResult& result);
-
-    int final_verification_pattern(const EraseConfig& config) const;
 
     bool write_full_pass(int pattern_type, std::uint64_t total_size, std::size_t pass_index,
                          std::size_t total_passes, const std::string& pass_label,

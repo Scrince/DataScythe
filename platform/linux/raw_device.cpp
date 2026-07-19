@@ -6,11 +6,17 @@
 #include <cerrno>
 #include <cstring>
 #include <fcntl.h>
+#include <fstream>
 #include <memory>
+#include <spawn.h>
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <vector>
+
+extern char** environ;
 
 #ifndef BLKGETSIZE64
 #define BLKGETSIZE64 _IOR(0x12, 114, size_t)
@@ -19,6 +25,36 @@
 namespace datascythe {
 
 namespace {
+
+bool run_argv(const std::vector<std::string>& args, std::string& error_out) {
+    if (args.empty()) {
+        error_out = "empty command";
+        return false;
+    }
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& a : args) {
+        argv.push_back(const_cast<char*>(a.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    pid_t pid = 0;
+    const int spawn_rc = posix_spawn(&pid, args[0].c_str(), nullptr, nullptr, argv.data(), environ);
+    if (spawn_rc != 0) {
+        error_out = "posix_spawn failed";
+        return false;
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        error_out = "waitpid failed";
+        return false;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        error_out = "command failed: " + args[0];
+        return false;
+    }
+    return true;
+}
 
 class LinuxRawDevice final : public IRawDevice {
 public:
@@ -141,7 +177,40 @@ public:
     }
 
     bool dismount_volumes(std::string& error_out) override {
-        (void)error_out;
+        if (target_type_ != RawTargetType::BlockDevice && target_type_ != RawTargetType::Volume) {
+            return true;
+        }
+        if (path_.empty()) {
+            error_out = "No device path for dismount";
+            return false;
+        }
+
+        // Unmount any mount points whose source device matches path_ (argv only).
+        std::ifstream mounts("/proc/mounts");
+        if (!mounts) {
+            error_out = "Unable to read /proc/mounts for dismount";
+            return false;
+        }
+        std::string device, mount_point, rest;
+        std::vector<std::string> mount_points;
+        while (mounts >> device >> mount_point) {
+            std::getline(mounts, rest);
+            if (device == path_ || device.find(path_) == 0 || path_.find(device) == 0) {
+                mount_points.push_back(mount_point);
+            }
+        }
+        if (mount_points.empty()) {
+            // Nothing mounted — treat as success.
+            return true;
+        }
+        for (const auto& mp : mount_points) {
+            std::string err;
+            if (!run_argv({"/bin/umount", "-f", mp}, err) &&
+                !run_argv({"/usr/bin/umount", "-f", mp}, err)) {
+                error_out = "umount failed for " + mp + ": " + err;
+                return false;
+            }
+        }
         return true;
     }
 

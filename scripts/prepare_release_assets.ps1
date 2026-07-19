@@ -42,7 +42,6 @@ if (Test-Path -LiteralPath (Join-Path $guiBuild "DataScythe.exe")) {
 }
 
 
-
 Copy-IfExists (Join-Path $cliBuild "datascythe.exe") (Join-Path $stageDir "datascythe-cli.exe")
 
 @"

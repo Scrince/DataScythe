@@ -274,24 +274,32 @@ std::string resolve_volume_target(const std::string& device_path) {
     return device_path;
 }
 
-bool is_system_target(const std::string& path) {
+// Returns: 1 = system, 0 = not system, -1 = cannot determine (fail closed for drive ops).
+int system_target_status(const std::string& path) {
     std::string error;
     auto enumerator = datascythe::create_drive_enumerator();
     if (!enumerator) {
-        return false;
+        return -1;
     }
     const auto drives = enumerator->enumerate(error);
+    if (!error.empty() && drives.empty()) {
+        return -1;
+    }
     for (const auto& drive : drives) {
         if (drive.device_path == path && drive.is_system_drive) {
-            return true;
+            return 1;
         }
         for (const auto& vol : drive.volumes) {
             if (vol.mount_point == path && vol.is_system_volume) {
-                return true;
+                return 1;
             }
         }
     }
-    return false;
+    return 0;
+}
+
+bool is_system_target(const std::string& path) {
+    return system_target_status(path) == 1;
 }
 
 }  
@@ -439,8 +447,17 @@ int main(int argc, char* argv[]) {
     }
 
     for (const auto& target : targets) {
-        if (is_system_target(target)) {
+        const int status = system_target_status(target);
+        if (status == 1) {
             std::fprintf(stderr, "Refusing to erase system target: %s\n", target.c_str());
+            return 1;
+        }
+        if (status < 0 && drive_level_mode(config.mode)) {
+            // Fail closed: cannot verify system-drive status for destructive drive ops.
+            std::fprintf(stderr,
+                         "Refusing drive-level erase of %s: unable to enumerate drives "
+                         "to verify this is not a system disk.\n",
+                         target.c_str());
             return 1;
         }
     }

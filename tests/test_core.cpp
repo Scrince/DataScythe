@@ -195,19 +195,18 @@ void test_final_verification_pattern_logic() {
     const auto schedule = scheduler.build_schedule(config.pass_count, config.use_random_passes);
     expect_eq(schedule.size(), 3, "schedule for verification test");
 
-    const int expected_with_zero = 0x000;
-    const int expected_without_zero = schedule.back();
-
-    expect_true(config.final_zero_pass ? expected_with_zero == 0x000 : true,
-                "final zero pass yields 0x000 pattern");
-    expect_true(!config.final_zero_pass || expected_with_zero == 0x000,
-                "zero pattern when final zero enabled");
+    // verification_pattern_for_schedule uses the live schedule, not a rebuilt RNG schedule.
+    const int with_zero =
+        datascythe::EraseEngine::verification_pattern_for_schedule(config, schedule);
+    expect_eq(with_zero, 0x000, "final zero pass yields 0x000 pattern");
 
     config.final_zero_pass = false;
     const auto schedule_no_zero =
         scheduler.build_schedule(config.pass_count, config.use_random_passes);
-    expect_true(schedule_no_zero.back() == expected_without_zero,
-                "last schedule pattern without zero pass");
+    const int without_zero =
+        datascythe::EraseEngine::verification_pattern_for_schedule(config, schedule_no_zero);
+    expect_eq(without_zero, schedule_no_zero.back(),
+              "verify pattern matches last written schedule entry");
 }
 
 class MemoryRawDevice final : public datascythe::IRawDevice {

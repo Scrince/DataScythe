@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Dispatch the native release preflight to the current host platform."""
+                      
+
 
 from __future__ import annotations
 

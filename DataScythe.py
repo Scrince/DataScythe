@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Compatibility launcher for the DataScythe CLI."""
+                      
+
 
 from __future__ import annotations
 

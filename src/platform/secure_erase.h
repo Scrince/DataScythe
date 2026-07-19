@@ -11,7 +11,6 @@ namespace datascythe {
 using SecureEraseProgressCallback = std::function<bool(int percent, const std::string& status)>;
 
 
-
 class ISecureErase {
 public:
     virtual ~ISecureErase() = default;

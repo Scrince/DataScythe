@@ -4,18 +4,53 @@
 
 #include <fcntl.h>
 #include <memory>
+#include <spawn.h>
 #include <string>
 #include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
+#include <vector>
 
 #ifndef DKIOCGETBLOCKCOUNT
 #include <sys/disk.h>
 #endif
 
+extern char** environ;
+
 namespace datascythe {
 
 namespace {
+
+bool run_argv(const std::vector<std::string>& args, std::string& error_out) {
+    if (args.empty()) {
+        error_out = "empty command";
+        return false;
+    }
+    std::vector<char*> argv;
+    argv.reserve(args.size() + 1);
+    for (const auto& a : args) {
+        argv.push_back(const_cast<char*>(a.c_str()));
+    }
+    argv.push_back(nullptr);
+
+    pid_t pid = 0;
+    const int spawn_rc = posix_spawn(&pid, args[0].c_str(), nullptr, nullptr, argv.data(), environ);
+    if (spawn_rc != 0) {
+        error_out = "posix_spawn failed";
+        return false;
+    }
+    int status = 0;
+    if (waitpid(pid, &status, 0) < 0) {
+        error_out = "waitpid failed";
+        return false;
+    }
+    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
+        error_out = "command failed: " + args[0];
+        return false;
+    }
+    return true;
+}
 
 class MacRawDevice final : public IRawDevice {
 public:
@@ -80,22 +115,36 @@ public:
     }
 
     std::uint64_t block_size(std::string& error_out) const override {
-        (void)error_out;
-        return 4096;
+        if (!is_open()) {
+            error_out = "Not open";
+            return 0;
+        }
+        if (target_type_ == RawTargetType::BlockDevice) {
+            std::uint32_t block_size = 0;
+            if (ioctl(fd_, DKIOCGETBLOCKSIZE, &block_size) == 0 && block_size > 0) {
+                return block_size;
+            }
+        }
+        return 512;
     }
 
     bool write_at(std::uint64_t offset, const void* data, std::size_t size,
                   std::string& error_out) override {
-        if (lseek(fd_, static_cast<off_t>(offset), SEEK_SET) < 0) {
-            error_out = "seek failed";
+        if (!is_open()) {
+            error_out = "Not open";
             return false;
         }
         const auto* bytes = static_cast<const std::uint8_t*>(data);
         std::size_t done = 0;
         while (done < size) {
-            const ssize_t n = ::write(fd_, bytes + done, size - done);
+            const ssize_t n = ::pwrite(fd_, bytes + done, size - done,
+                                       static_cast<off_t>(offset + done));
             if (n < 0) {
-                error_out = "write failed";
+                error_out = "pwrite failed";
+                return false;
+            }
+            if (n == 0) {
+                error_out = "short write";
                 return false;
             }
             done += static_cast<std::size_t>(n);
@@ -105,16 +154,17 @@ public:
 
     bool read_at(std::uint64_t offset, void* data, std::size_t size,
                  std::string& error_out) override {
-        if (lseek(fd_, static_cast<off_t>(offset), SEEK_SET) < 0) {
-            error_out = "seek failed";
+        if (!is_open()) {
+            error_out = "Not open";
             return false;
         }
         auto* bytes = static_cast<std::uint8_t*>(data);
         std::size_t done = 0;
         while (done < size) {
-            const ssize_t n = ::read(fd_, bytes + done, size - done);
+            const ssize_t n = ::pread(fd_, bytes + done, size - done,
+                                      static_cast<off_t>(offset + done));
             if (n < 0) {
-                error_out = "read failed";
+                error_out = "pread failed";
                 return false;
             }
             if (n == 0) {
@@ -135,8 +185,25 @@ public:
     }
 
     bool dismount_volumes(std::string& error_out) override {
-        (void)error_out;
-        return true;
+        if (target_type_ != RawTargetType::BlockDevice && target_type_ != RawTargetType::Volume) {
+            // Regular files need no dismount.
+            return true;
+        }
+        if (path_.empty()) {
+            error_out = "No device path for dismount";
+            return false;
+        }
+        // argv-only diskutil — never shell-concatenate paths.
+        // Try unmountDisk first (whole disk); fall back to unmount for volumes.
+        std::string err;
+        if (run_argv({"/usr/sbin/diskutil", "unmountDisk", "force", path_}, err)) {
+            return true;
+        }
+        if (run_argv({"/usr/sbin/diskutil", "unmount", "force", path_}, err)) {
+            return true;
+        }
+        error_out = "diskutil unmount failed for " + path_ + ": " + err;
+        return false;
     }
 
     bool remove_target(std::string& error_out) override {

@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Generate or validate docs/SHA256SUMS for checked-in release artifacts."""
+                      
+
 
 from __future__ import annotations
 

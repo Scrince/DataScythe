@@ -210,19 +210,24 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
 
         const std::uint64_t size = effective_size(*device_, work_config, error);
         if (size == 0) {
+            // Zero-size: no overwrite occurred. Count as removed or skipped, not shredded.
             if (config.remove_after_shred) {
                 if (!device_->remove_target(error)) {
                     aggregate.warnings.push_back("Failed to remove zero-size file " + file +
                                                  ": " + error);
                     ++failed_targets;
-                } else if (logger_) {
-                    logger_->info("Removed zero-size file " + file);
+                } else {
+                    if (logger_) {
+                        logger_->info("Removed zero-size file " + file);
+                    }
+                    aggregate.warnings.push_back(
+                        "Removed zero-size file without overwrite: " + file);
                 }
             } else {
                 aggregate.warnings.push_back("Skipped overwrite for zero-size file: " + file);
+                ++failed_targets;
             }
             device_->close();
-            ++shredded_targets;
             continue;
         }
 
@@ -235,6 +240,7 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
             aggregate.error = file_result.error;
             aggregate.message = file_result.message;
             device_->close();
+            ++failed_targets;
             break;
         }
 
@@ -242,13 +248,15 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
             if (!device_->remove_target(error)) {
                 aggregate.warnings.push_back("Failed to remove " + file + ": " + error);
                 ++failed_targets;
+                device_->close();
+                continue;
             } else if (logger_) {
                 logger_->info("Removed " + file);
             }
         }
 
         device_->close();
-        ++shredded_targets;
+        ++shredded_targets;  // only after a successful overwrite of non-zero content
     }
 
     if (aggregate.success && failed_targets > 0) {
@@ -256,9 +264,10 @@ EraseResult EraseEngine::erase_paths(const std::vector<std::string>& paths,
         aggregate.error = EraseError::IoError;
         aggregate.message = "Shred incomplete: " + std::to_string(failed_targets) +
                             " of " + std::to_string(all_files.size()) +
-                            " file(s) failed or were skipped";
+                            " file(s) failed or were skipped; "
+                            "overwrote " + std::to_string(shredded_targets) + " file(s)";
     } else if (aggregate.success) {
-        aggregate.message = "Shredded " + std::to_string(shredded_targets) + " file(s)";
+        aggregate.message = "Shredded (overwrote) " + std::to_string(shredded_targets) + " file(s)";
     }
 
     if (logger_) {
@@ -288,11 +297,17 @@ EraseResult EraseEngine::erase_target(const std::string& path, const EraseConfig
     }
 
     if (config.mode == EraseMode::FullDeviceWipe || config.mode == EraseMode::QuickZeroFill) {
+        // Fail closed: do not wipe a live mounted device/volume.
         if (!device_->dismount_volumes(error)) {
-            result.warnings.push_back("Volume dismount warning: " + error);
+            result.success = false;
+            result.error = EraseError::AccessDenied;
+            result.message = "Refusing wipe: volume dismount failed: " +
+                             (error.empty() ? std::string("unknown error") : error);
+            device_->close();
             if (logger_) {
-                logger_->warning(result.warnings.back());
+                logger_->error(result.message);
             }
+            return result;
         }
     }
 
@@ -421,20 +436,15 @@ EraseResult EraseEngine::erase_single_open_target(const std::string& path,
     return run_passes(config, total_size, op, progress, result);
 }
 
-int EraseEngine::final_verification_pattern(const EraseConfig& config) const {
-    if (config.mode == EraseMode::QuickZeroFill) {
+int EraseEngine::verification_pattern_for_schedule(const EraseConfig& config,
+                                                   const std::vector<int>& schedule) {
+    if (config.mode == EraseMode::QuickZeroFill || config.final_zero_pass) {
         return 0x000;
     }
-    if (config.final_zero_pass) {
-        return 0x000;
-    }
-
-    PassScheduler scheduler;
-    std::vector<int> schedule =
-        scheduler.build_schedule(config.pass_count, config.use_random_passes);
     if (schedule.empty()) {
         return 0x000;
     }
+    // Must use the schedule that was actually written — never rebuild RNG schedule.
     return schedule.back();
 }
 
@@ -515,7 +525,7 @@ EraseResult EraseEngine::run_passes(const EraseConfig& config, std::uint64_t tot
     }
 
     if (config.verify_after_erase) {
-        const int pattern = final_verification_pattern(config);
+        const int pattern = verification_pattern_for_schedule(config, schedule);
         if (pattern < 0) {
             result.warnings.push_back(
                 "Verification skipped because the final pass used random data.");
