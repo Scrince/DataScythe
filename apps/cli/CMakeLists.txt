@@ -4,7 +4,7 @@ set_target_properties(datascythe PROPERTIES OUTPUT_NAME "datascythe")
 target_link_libraries(datascythe PRIVATE datascythe_core)
 
 if(WIN32)
-    target_link_libraries(datascythe PRIVATE setupapi)
+    target_link_libraries(datascythe PRIVATE setupapi bcrypt)
     include(${CMAKE_SOURCE_DIR}/cmake/DeployWindows.cmake)
     datascythe_deploy_mingw(datascythe)
 endif()

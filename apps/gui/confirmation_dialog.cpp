@@ -20,16 +20,28 @@ ConfirmationDialog::ConfirmationDialog(const DriveInfo& drive, const QString& op
     auto* layout = new QVBoxLayout(this);
     warning_label_ = new QLabel(this);
     warning_label_->setWordWrap(true);
+    const bool is_ssd = drive.type == DriveType::SSD;
+    const QString ssd_note =
+        is_ssd
+            ? QString("<br/><br/><b>SSD notice:</b> Software overwrite cannot guarantee "
+                      "removal from remapped blocks, HPA/DCO, or firmware-reserved areas. "
+                      "Prefer vendor secure-erase / sanitize when available, and treat "
+                      "verification coverage as incomplete for SSDs.")
+            : QString();
     warning_label_->setText(
         QString("<b style='color:#b00020;'>WARNING</b><br/>"
                 "This will <b>irreversibly destroy all data</b> on:<br/>"
                 "<pre>%1</pre>"
-                "Operation: <b>%2</b><br/>%3<br/><br/>"
+                "Model/Serial: %5 / %6<br/>"
+                "Operation: <b>%2</b><br/>%3%7<br/><br/>"
                 "Type <b>%4</b> below to confirm.")
             .arg(QString::fromStdString(drive.device_path))
             .arg(operation_title)
             .arg(operation_description)
-            .arg(required_phrase_));
+            .arg(required_phrase_)
+            .arg(QString::fromStdString(drive.model.empty() ? "(unknown)" : drive.model))
+            .arg(QString::fromStdString(drive.serial.empty() ? "(unknown)" : drive.serial))
+            .arg(ssd_note));
     layout->addWidget(warning_label_);
 
     phrase_edit_ = new QLineEdit(this);

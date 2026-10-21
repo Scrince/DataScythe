@@ -55,5 +55,5 @@ elseif(APPLE)
 endif()
 
 if(WIN32)
-    target_link_libraries(datascythe_core PUBLIC setupapi)
+    target_link_libraries(datascythe_core PUBLIC setupapi bcrypt)
 endif()

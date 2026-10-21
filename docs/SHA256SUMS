@@ -1,8 +1,10 @@
-# DataScythe release hash manifest
-# Regenerated to match current artifacts / public cert
 f61cc4a6969a7f5e60da02482cdd2f0f4f897de5647bbd518358eaef1e7aff9b  releases/native/linux/DataScythe-0.1.0-linux-amd64.tar.gz
 04d17aee620b11108f83db9c40d56b0cbef64fe5c6305d9a2c56fd1e7c108a60  releases/native/macos/DataScythe-0.1.0-macos-universal.tar.gz
 f5a286a25a3ecd83f5723cff94b168d47c00bc1c07c85f4da4373b4c374e77f4  releases/native/macos/DataScythe-0.1.0-macos.tar.gz
-ea8faea135f956bb5610d888ce7940bf52c06a98d5a23dec7027a5f921be71b5  releases/native/windows/DataScythe-0.1.0-win64.zip
-7db36d5d305fa406342bad65ff6b33ffb5292d8ce3528e4b9fde94e73ba61a65  docs/DataScythe_Release_Signing_2026_pubkey.asc
-3fab5ae21002cee29a38b9abe21d4aafee2ce9945f85851e56ec1b50881b3f9a  docs/DataScythe_Local_Code_Signing_2026.cer
+d63416781a0f1fb867e33d440e676b912c08f77457ea0ebce9335b96403beda8  releases/native/windows/DataScythe-0.1.0-win64.zip
+615c0b9330b706edf062b0ea92456cffcfc0e53b74d23b94e334b683bced7eba  docs/WINDOWS_INSTALLER.md
+383a2ae4408aee1cc21ba7c51fcbbc87d716622bbd53435f374fd6dc7c1fc3a1  docs/WINDOWS_INSTALLER.md.asc
+829c770544432ea22317255b51a7aae45c5646f775b201b15d92ee6ba9f3ba24  release/windows/DataScythe-Setup-0.1.0.exe
+ff0982bf4482b142d9fa656ddb2d8c2cffe39359f0c893d819c90aebdec13743  release/windows/DataScythe-Setup-0.1.0.exe.asc
+ae76a0c2181f54b15f69d604a0e993a9aa30fc2286c5f1b8b04002801e33be5f  release/windows/SHA256SUMS
+eba16ecb470b20bf9a91334458e581aaceb2d8c48d440cf852584ecd225c0663  release/windows/SHA256SUMS.asc

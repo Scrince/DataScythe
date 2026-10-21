@@ -75,3 +75,11 @@ tmp/
 *.temp
 *.bak
 *.bak-*
+
+# Windows installer release assets
+!release/
+!release/windows/
+!release/windows/DataScythe-Setup-0.1.0.exe
+!release/windows/DataScythe-Setup-0.1.0.exe.asc
+!release/windows/SHA256SUMS
+!release/windows/SHA256SUMS.asc

@@ -8,6 +8,8 @@ references in `docs/`.
 
 ### Added
 
+- Erasure certificates report explicit verification coverage (full / percent / sparse sample).
+- GUI destructive confirmations show drive model/serial and an SSD firmware limitation notice.
 - Qt GUI drive cloning tab for byte-for-byte physical drive copies with optional
   full byte comparison verification.
 - Core `DriveCloneEngine` using platform raw-device I/O, target dismount, size

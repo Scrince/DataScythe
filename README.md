@@ -248,3 +248,7 @@ releases/native/   Promoted native release artifacts
 DataScythe is distributed under the license in `LICENSE.md`. Pass scheduling is
 derived from GNU coreutils `shred.c`; see the project documentation for details
 and third-party notices.
+
+## Windows installer
+
+See [Windows installer and signature verification](docs/WINDOWS_INSTALLER.md) for the download path and verification steps.
