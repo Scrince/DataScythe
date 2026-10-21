@@ -51,6 +51,9 @@ std::string certificate_body(const ErasureCertificate& cert, bool include_digest
     if (cert.verification_enabled) {
         out << "Verification result: " << (cert.verification_passed ? "PASSED" : "FAILED")
             << '\n';
+        if (!cert.verification_coverage.empty()) {
+            out << "Verification cover:  " << cert.verification_coverage << '\n';
+        }
     }
     out << "Started:             " << cert.started_at << '\n';
     out << "Completed:           " << cert.completed_at << '\n';
@@ -70,6 +73,7 @@ std::string certificate_body(const ErasureCertificate& cert, bool include_digest
     out << "\nLimitations:\n";
     out << "  - Covers OS-addressable regions only.\n";
     out << "  - SSD wear-leveling, HPA/DCO, and firmware areas may retain data.\n";
+    out << "  - Sparse or percent verification is not a full-media proof of erasure.\n";
     out << "  - Backups and remote copies are outside scope.\n";
     out << "  - Content SHA-256 is a tamper-evidence digest, not an authority signature.\n";
 
@@ -210,6 +214,25 @@ ErasureCertificate build_certificate(const std::string& target, const EraseConfi
     cert.final_zero_pass = config.final_zero_pass;
     cert.verification_enabled = config.verify_after_erase;
     cert.verification_passed = result.verification_passed;
+    if (config.verify_after_erase) {
+        switch (config.verification_mode) {
+            case VerificationMode::Full:
+                cert.verification_coverage = "full (100% of addressable bytes)";
+                break;
+            case VerificationMode::Percent: {
+                std::ostringstream cov;
+                cov << "percent (" << config.verification_percent
+                    << "% of addressable bytes)";
+                cert.verification_coverage = cov.str();
+                break;
+            }
+            case VerificationMode::Sparse:
+            default:
+                cert.verification_coverage =
+                    "sparse sample (limited sectors; not full media proof)";
+                break;
+        }
+    }
     cert.partition_metadata_wipe = config.wipe_partition_metadata;
     cert.completed_at = timestamp_now();
     cert.success = result.success;

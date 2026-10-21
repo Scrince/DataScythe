@@ -129,6 +129,8 @@ void test_build_certificate() {
     expect_true(cert.verification_enabled, "verification enabled flag");
     expect_true(cert.verification_passed, "verification passed flag");
     expect_true(cert.success, "certificate success");
+    expect_true(cert.verification_coverage.find("sparse") != std::string::npos,
+                "default verification coverage is sparse sample");
 }
 
 void test_export_certificate() {

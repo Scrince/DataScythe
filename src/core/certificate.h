@@ -16,6 +16,8 @@ struct ErasureCertificate {
     bool final_zero_pass = false;
     bool verification_enabled = false;
     bool verification_passed = false;
+    /** Human-readable verification coverage, e.g. "sample (sparse)", "full", "25%". */
+    std::string verification_coverage;
     bool partition_metadata_wipe = false;
     std::string started_at;
     std::string completed_at;
