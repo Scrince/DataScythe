@@ -33,18 +33,20 @@ bool fill_os_random(std::uint8_t* data, std::size_t size) {
     return status >= 0;
 #else
 #if defined(__APPLE__)
-    // getentropy is limited to 256 bytes per call.
-    std::size_t filled = 0;
-    while (filled < size) {
-        const std::size_t chunk = std::min<std::size_t>(size - filled, 256);
-        if (::getentropy(data + filled, chunk) != 0) {
-            filled = 0;
-            break;
+    {
+        // getentropy is limited to 256 bytes per call.
+        std::size_t filled = 0;
+        while (filled < size) {
+            const std::size_t chunk = std::min<std::size_t>(size - filled, 256);
+            if (::getentropy(data + filled, chunk) != 0) {
+                filled = 0;
+                break;
+            }
+            filled += chunk;
         }
-        filled += chunk;
-    }
-    if (filled == size) {
-        return true;
+        if (filled == size) {
+            return true;
+        }
     }
 #elif defined(__linux__)
     {

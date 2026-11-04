@@ -290,8 +290,15 @@ EraseResult DriveCloneEngine::clone(const std::string& source_path,
             "Target is larger than source; bytes beyond the source size are left unchanged.");
     }
 
-    if (!target_->dismount_volumes(error)) {
-        result.warnings.push_back("Target volume dismount warning: " + error);
+    std::string dismount_error;
+    if (!target_->dismount_volumes(dismount_error)) {
+        source_->close();
+        target_->close();
+        result.success = false;
+        result.error = EraseError::AccessDenied;
+        result.message = "Refusing clone: target volume dismount failed: " +
+                         (dismount_error.empty() ? std::string("unknown error") : dismount_error);
+        return result;
     }
 
     if (logger_) {

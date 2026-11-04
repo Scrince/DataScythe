@@ -85,32 +85,53 @@ std::vector<std::string> PathCollector::collect_files(const std::string& path, b
         return files;
     }
 
-    const auto options = recursive ? fs::directory_options::skip_permission_denied
-                                   : fs::directory_options::none;
     // Never follow directory symlinks into foreign trees.
     const auto follow = fs::directory_options::none;
 
     if (recursive) {
-        for (const auto& entry :
-             fs::recursive_directory_iterator(root, options | follow, ec)) {
-            if (ec) {
-                error_out = ec.message();
-                break;
-            }
+        fs::recursive_directory_iterator iterator(root, follow, ec);
+        const fs::recursive_directory_iterator end;
+        if (ec) {
+            error_out = "Unable to enumerate directory: " + ec.message();
+            return files;
+        }
+        while (iterator != end) {
+            const auto& entry = *iterator;
             std::error_code entry_ec;
             if (is_safe_regular_file(entry, root_real, entry_ec)) {
                 append_with_streams(entry.path().string(), include_alternate_data_streams, files);
+            } else if (entry_ec) {
+                error_out = "Unable to inspect " + entry.path().string() + ": " +
+                            entry_ec.message();
+                break;
+            }
+            iterator.increment(ec);
+            if (ec) {
+                error_out = "Unable to continue directory traversal: " + ec.message();
+                break;
             }
         }
     } else {
-        for (const auto& entry : fs::directory_iterator(root, options | follow, ec)) {
-            if (ec) {
-                error_out = ec.message();
-                break;
-            }
+        fs::directory_iterator iterator(root, follow, ec);
+        const fs::directory_iterator end;
+        if (ec) {
+            error_out = "Unable to enumerate directory: " + ec.message();
+            return files;
+        }
+        while (iterator != end) {
+            const auto& entry = *iterator;
             std::error_code entry_ec;
             if (is_safe_regular_file(entry, root_real, entry_ec)) {
                 append_with_streams(entry.path().string(), include_alternate_data_streams, files);
+            } else if (entry_ec) {
+                error_out = "Unable to inspect " + entry.path().string() + ": " +
+                            entry_ec.message();
+                break;
+            }
+            iterator.increment(ec);
+            if (ec) {
+                error_out = "Unable to continue directory traversal: " + ec.message();
+                break;
             }
         }
     }
