@@ -1,0 +1,69 @@
+DataScythe production repository map
+===================================
+
+.
+|-- README.md                         Product overview, safety, usage, release matrix
+|-- LICENSE.md                        Distribution license
+|-- CHANGELOG.md                      User-visible version history
+|-- CMakeLists.txt                    C++17 project, build options, install/CPack setup
+|-- src/
+|   |-- core/                         Erase, clone, preflight, verification, certificate engines
+|   |-- platform/                     Shared platform interfaces and factory
+|   `-- CMakeLists.txt                Core library and platform source selection
+|-- apps/
+|   |-- cli/                          CLI entry point and target configuration
+|   `-- gui/                          Qt GUI entry point, window, dialogs, models, embedded resources
+|       `-- resources/                GUI icons and Windows resource metadata
+|-- platform/
+|   |-- windows/                      Windows drive, volume, raw-device, ADS, secure-erase backends
+|   |-- linux/                        Linux drive, volume, raw-device, secure-erase backends
+|   `-- macos/                        macOS drive, volume, raw-device, secure-erase backends
+|-- docs/
+|   |-- UserGuide.txt                 Operator workflow
+|   |-- FileFormat.txt                Certificates, logs, and CLI output formats
+|   |-- EraseEngine.txt               Erase behavior and limits
+|   |-- PassScheduling.txt            Overwrite scheduling behavior
+|   |-- Confirmation.txt              Destructive-operation confirmation requirements
+|   |-- Limitations.txt               Technical limitations
+|   |-- OpSec.txt                     Operational security guidance
+|   |-- ThirdPartyNotices.txt         Third-party notices
+|   |-- LinuxRelease.txt              Linux package notes
+|   |-- Release_v0.1.0.txt            Release record
+|   |-- WINDOWS_INSTALLER.md          Windows installer and verification instructions
+|   |-- SHA256SUMS                    Checksums for promoted native release artifacts
+|   `-- SHA256SUMS.asc                Detached signature for the checksum manifest
+|-- cmake/
+|   |-- DataScythePackaging.cmake     Install and package definitions
+|   `-- DeployWindows.cmake           Windows runtime dependency deployment
+|-- installer/
+|   `-- DataScythe.iss                Windows installer definition
+|-- release/
+|   `-- windows/                      Windows setup installer and checksum/signature files
+|-- releases/
+|   `-- native/
+|       |-- windows/                  Windows x64 GUI+CLI archive and unpacked runtime package
+|       |   `-- DataScythe-0.1.0-win64/
+|       |                               GUI, CLI, Qt/runtime DLLs, package README and signatures
+|       |-- linux/                    Linux amd64 CLI archive and detached signature
+|       `-- macos/                    Apple Silicon and universal CLI archives and signatures
+`-- assets/
+    |-- icns/, ico/, windows/, macos/  Platform application icons
+    `-- png/icons/                     GUI icon image assets
+
+Production notes
+----------------
+- Production source of truth is the native C++ implementation in src/ and apps/,
+  with platform behavior in platform/. docs/ contains operator and release
+  documentation.
+- CPack creates Linux and macOS CLI archives from a configured build tree; these
+  are promoted into releases/native/{linux,macos}/. Windows release staging
+  uses scripts/prepare_release_assets.ps1 and cmake/DeployWindows.cmake to
+  assemble the GUI, CLI, and runtime dependencies; the installer is built from
+  installer/DataScythe.iss. The staged release copies and archives are packaged
+  production deliverables, not source-of-truth copies.
+- The Windows package boundary includes GUI, CLI, and bundled Qt/runtime DLLs.
+  The Linux amd64 and macOS arm64/universal v0.1.0 packages are CLI-only.
+- Release artifacts and their detached signatures/checksum manifests are listed
+  where shipped above. Development build trees, tests, local signing materials,
+  and temporary artifacts are intentionally omitted.
+
